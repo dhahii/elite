@@ -92,6 +92,9 @@
         tr.modified td {
             background: #fff8e7;
         }
+        tr.last-modified td {
+            background: #e8f0fe;
+        }
         tr.modified .orig-principal {
             text-decoration: line-through;
             color: #999;
@@ -105,46 +108,18 @@
             font-weight: 700;
             color: #c0392b;
         }
-        .delete-btn {
-            background: #e74c3c;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 14px;
+        tr.last-modified .orig-principal {
+            text-decoration: line-through;
+            color: #999;
             font-size: 13px;
-            cursor: pointer;
-            transition: 0.2s;
-            font-weight: 600;
         }
-        .delete-btn:hover {
-            background: #c0392b;
-            transform: scale(1.05);
+        tr.last-modified .new-principal {
+            font-weight: 700;
+            color: #1a5c8a;
         }
-        .delete-btn:disabled {
-            background: #b0b0b0;
-            cursor: not-allowed;
-            transform: none;
-        }
-        .restore-btn {
-            background: #27ae60;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 20px;
-            font-size: 14px;
-            cursor: pointer;
-            margin-top: 20px;
-            font-weight: 600;
-        }
-        .restore-btn:hover {
-            background: #1e8449;
-        }
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-            margin: 20px 0 10px;
+        tr.last-modified .new-total {
+            font-weight: 700;
+            color: #1a5c8a;
         }
         .footer-note {
             text-align: center;
@@ -153,6 +128,14 @@
             margin-top: 20px;
             border-top: 1px solid #ddd;
             padding-top: 18px;
+        }
+        .highlight-box {
+            background: #fef9e7;
+            border-right: 5px solid #f39c12;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 15px;
         }
         @media (max-width: 700px) {
             th, td {
@@ -180,14 +163,9 @@
         <div class="card"><div class="label">📅 عدد الأقساط</div><div class="value" id="countDisplay">24</div></div>
         <div class="card"><div class="label">💰 إجمالي الفوائد</div><div class="value" id="interestDisplay">392.042</div></div>
         <div class="card"><div class="label">📈 إجمالي أصل القرض (الأصلي)</div><div class="value" id="principalOrigDisplay">447.958</div></div>
-        <div class="card highlight"><div class="label">➕ إجمالي الإضافة (417×8)</div><div class="value" id="additionDisplay">3,336.000</div></div>
-        <div class="card highlight"><div class="label">🆕 إجمالي أصل القرض (الجديد)</div><div class="value" id="principalNewDisplay">3,783.958</div></div>
-        <div class="card highlight"><div class="label">💵 إجمالي الأقساط (الجديد)</div><div class="value" id="totalNewDisplay">4,176.000</div></div>
-    </div>
-
-    <!-- أزرار التحكم -->
-    <div class="controls">
-        <button class="restore-btn" onclick="restoreAll()">↩️ استعادة جميع الأقساط المحذوفة</button>
+        <div class="card highlight"><div class="label">➕ إجمالي الإضافات</div><div class="value" id="additionDisplay">3,469.787</div></div>
+        <div class="card highlight"><div class="label">🆕 إجمالي أصل القرض (الجديد)</div><div class="value" id="principalNewDisplay">3,917.745</div></div>
+        <div class="card highlight"><div class="label">💵 إجمالي الأقساط (الجديد)</div><div class="value" id="totalNewDisplay">4,309.787</div></div>
     </div>
 
     <!-- الجدول -->
@@ -201,7 +179,6 @@
                 <th>أصل القرض الأصلي</th>
                 <th>أصل القرض بعد الإضافة</th>
                 <th>القسط الكلي الجديد</th>
-                <th>حذف</th>
             </tr>
         </thead>
         <tbody id="tableBody">
@@ -209,16 +186,20 @@
         </tbody>
     </table>
 
+    <div class="highlight-box">
+        <strong>📌 ملخص الإضافات:</strong><br>
+        • الأقساط من <strong>نوفمبر 2027 إلى مايو 2028</strong> (7 أقساط): إضافة <strong>417 د.ك.</strong> لكل قسط.<br>
+        • القسط الأخير <strong>يونيو 2028</strong>: إضافة <strong>133.787 د.ك.</strong>
+    </div>
+
     <div class="footer-note">
-        ✅ الأقساط من <strong>نوفمبر 2027 إلى يونيو 2028</strong> تم إضافة <strong>417 د.ك.</strong> إلى أصل القرض.
-        <br>يمكنك حذف أي صف بالضغط على زر "حذف" وسيتم تحديث المجاميع تلقائياً.
+        ✅ جميع الأقساط معروضة كاملة · يمكنك طباعة الصفحة أو حفظها كـ PDF.
     </div>
 </div>
 
 <script>
     // --------------------------------------------------------------
     // البيانات الأصلية (جميع الأقساط حتى 2028/06/22)
-    // بنفس الترتيب الذي طلبته
     // --------------------------------------------------------------
     const originalData = [
         { date: '2026/07/22', interest: 17.077, total: 35.000, principal: 17.923 },
@@ -238,44 +219,22 @@
         { date: '2027/09/22', interest: 16.344, total: 35.000, principal: 18.656 },
         { date: '2027/10/22', interest: 15.724, total: 35.000, principal: 19.276 },
         // ----------------------------------------------------------
-        // من نوفمبر 2027 إلى يونيو 2028 (سيتم إضافة 417)
+        // من نوفمبر 2027 إلى مايو 2028: إضافة 417
+        // يونيو 2028: إضافة 133.787
         // ----------------------------------------------------------
-        { date: '2027/11/22', interest: 16.150, total: 35.000, principal: 18.850, add: true },
-        { date: '2027/12/22', interest: 15.536, total: 35.000, principal: 19.464, add: true },
-        { date: '2028/01/22', interest: 15.955, total: 35.000, principal: 19.045, add: true },
-        { date: '2028/02/22', interest: 15.858, total: 35.000, principal: 19.142, add: true },
-        { date: '2028/03/22', interest: 14.744, total: 35.000, principal: 20.256, add: true },
-        { date: '2028/04/22', interest: 15.657, total: 35.000, principal: 19.343, add: true },
-        { date: '2028/05/22', interest: 15.057, total: 35.000, principal: 19.943, add: true },
-        { date: '2028/06/22', interest: 15.457, total: 35.000, principal: 19.543, add: true }
+        { date: '2027/11/22', interest: 16.150, total: 35.000, principal: 18.850, add: 417 },
+        { date: '2027/12/22', interest: 15.536, total: 35.000, principal: 19.464, add: 417 },
+        { date: '2028/01/22', interest: 15.955, total: 35.000, principal: 19.045, add: 417 },
+        { date: '2028/02/22', interest: 15.858, total: 35.000, principal: 19.142, add: 417 },
+        { date: '2028/03/22', interest: 14.744, total: 35.000, principal: 20.256, add: 417 },
+        { date: '2028/04/22', interest: 15.657, total: 35.000, principal: 19.343, add: 417 },
+        { date: '2028/05/22', interest: 15.057, total: 35.000, principal: 19.943, add: 417 },
+        { date: '2028/06/22', interest: 15.457, total: 35.000, principal: 19.543, add: 133.787 }
     ];
 
-    // الإضافة الثابتة
-    const ADDITION = 417;
-
-    // نسخة عاملة من البيانات (سنحذف منها)
-    let currentData = [];
-
     // --------------------------------------------------------------
-    // دوال المساعدة
+    // دوال العرض
     // --------------------------------------------------------------
-    function cloneData(data) {
-        return data.map(item => ({ ...item }));
-    }
-
-    // حساب القيم الجديدة للصف (مع أو بدون إضافة)
-    function computeRow(item) {
-        const principalOrig = item.principal;
-        let principalNew = principalOrig;
-        let totalNew = item.total;
-        if (item.add) {
-            principalNew = principalOrig + ADDITION;
-            totalNew = item.interest + principalNew;
-        }
-        return { principalOrig, principalNew, totalNew };
-    }
-
-    // إعادة بناء الجدول والمجاميع
     function renderTable() {
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
@@ -285,17 +244,36 @@
         let totalPrincipalNew = 0;
         let totalNew = 0;
         let count = 0;
+        let totalAdditions = 0;
 
-        currentData.forEach((item, index) => {
-            const { principalOrig, principalNew, totalNew: rowTotal } = computeRow(item);
+        originalData.forEach((item, index) => {
+            const principalOrig = item.principal;
+            let principalNew = principalOrig;
+            let totalNewRow = item.total;
+            let addition = 0;
+
+            if (item.add) {
+                addition = item.add;
+                principalNew = principalOrig + addition;
+                totalNewRow = item.interest + principalNew;
+                totalAdditions += addition;
+            }
+
             totalInterest += item.interest;
             totalPrincipalOrig += principalOrig;
             totalPrincipalNew += principalNew;
-            totalNew += rowTotal;
+            totalNew += totalNewRow;
             count++;
 
             const tr = document.createElement('tr');
-            if (item.add) tr.className = 'modified';
+            // تمييز الصفوف المعدلة
+            if (item.add) {
+                if (index === originalData.length - 1) {
+                    tr.className = 'last-modified'; // آخر قسط بلون مختلف
+                } else {
+                    tr.className = 'modified';
+                }
+            }
 
             // رقم القسط
             const tdNum = document.createElement('td');
@@ -334,23 +312,11 @@
             // القسط الكلي الجديد
             const tdTotalNew = document.createElement('td');
             if (item.add) {
-                tdTotalNew.innerHTML = `<span class="orig-principal">${item.total.toFixed(3)}</span> → <span class="new-total">${rowTotal.toFixed(3)}</span>`;
+                tdTotalNew.innerHTML = `<span class="orig-principal">${item.total.toFixed(3)}</span> → <span class="new-total">${totalNewRow.toFixed(3)}</span>`;
             } else {
-                tdTotalNew.textContent = rowTotal.toFixed(3);
+                tdTotalNew.textContent = totalNewRow.toFixed(3);
             }
             tr.appendChild(tdTotalNew);
-
-            // زر الحذف
-            const tdDelete = document.createElement('td');
-            const btn = document.createElement('button');
-            btn.className = 'delete-btn';
-            btn.textContent = '🗑 حذف';
-            btn.dataset.index = index;
-            btn.onclick = function() {
-                deleteRow(parseInt(this.dataset.index));
-            };
-            tdDelete.appendChild(btn);
-            tr.appendChild(tdDelete);
 
             tbody.appendChild(tr);
         });
@@ -359,33 +325,15 @@
         document.getElementById('countDisplay').textContent = count;
         document.getElementById('interestDisplay').textContent = totalInterest.toFixed(3);
         document.getElementById('principalOrigDisplay').textContent = totalPrincipalOrig.toFixed(3);
-        // الإضافة = totalPrincipalNew - totalPrincipalOrig
-        const additionTotal = totalPrincipalNew - totalPrincipalOrig;
-        document.getElementById('additionDisplay').textContent = additionTotal.toFixed(3);
+        document.getElementById('additionDisplay').textContent = totalAdditions.toFixed(3);
         document.getElementById('principalNewDisplay').textContent = totalPrincipalNew.toFixed(3);
         document.getElementById('totalNewDisplay').textContent = totalNew.toFixed(3);
-    }
-
-    // حذف صف
-    function deleteRow(index) {
-        if (currentData.length <= 1) {
-            alert('لا يمكن حذف القسط الأخير!');
-            return;
-        }
-        currentData.splice(index, 1);
-        renderTable();
-    }
-
-    // استعادة جميع الأقساط
-    function restoreAll() {
-        currentData = cloneData(originalData);
-        renderTable();
     }
 
     // --------------------------------------------------------------
     // تهيئة الصفحة
     // --------------------------------------------------------------
-    restoreAll();
+    renderTable();
 </script>
 
 </body>
