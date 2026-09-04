@@ -63,7 +63,13 @@ jobs:
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
     
-    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً) - طريقة محسنة
+    # ⭐️ الخطوة 4: تثبيت أدوات معالجة HTML
+    - name: Install HTML tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y html-xml-utils
+    
+    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة (فوراً) - طريقة محسنة
     - name: Extract doctor and clinic name
       id: extract_doctor
       run: |
@@ -72,38 +78,64 @@ jobs:
         # ⭐️ تنظيف الصفحة من الترميزات
         cat page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > page-clean.html
         
-        # ⭐️ استخراج اسم الدكتور - البحث عن <h5> أو النص بعد "د/"
+        # ⭐️ استخراج اسم الدكتور - من <h5> مباشرة
         DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        if [ -z "$DOCTOR" ]; then
+        
+        # إذا لم يتم العثور عليه، حاول البحث عن <h4>
+        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
+          DOCTOR=$(grep -o '<h4[^>]*>[^<]*</h4>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        fi
+        
+        # إذا لم يتم العثور عليه، حاول البحث عن "د/"
+        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
           DOCTOR=$(grep -o 'د/[^<"]*' page-clean.html | head -1 | xargs)
         fi
-        if [ -z "$DOCTOR" ]; then
-          DOCTOR=$(grep -o 'د/[^ ]* [^ ]* [^ ]*' page-clean.html | head -1 | xargs)
+        
+        # إذا لم يتم العثور عليه، حاول البحث عن النص بين علامات h5 باستخدام hxselect
+        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
+          DOCTOR=$(hxselect -c 'h5' page-clean.html 2>/dev/null | head -1 | xargs)
         fi
+        
         [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
         
-        # ⭐️ استخراج اسم العيادة - البحث عن <h6> أو النص بعد "عيادة"
+        # ⭐️ استخراج اسم العيادة - من <h6> مباشرة
         CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        if [ -z "$CLINIC" ]; then
+        
+        # إذا لم يتم العثور عليه، حاول البحث عن <h5> الثاني
+        if [ -z "$CLINIC" ] || [ "$CLINIC" = "عيادة يوم" ] || [ "$CLINIC" = "" ]; then
+          CLINIC=$(grep -o '<h5[^>]*>[^<]*</h5>' page-clean.html | head -2 | tail -1 | sed 's/<[^>]*>//g' | xargs)
+        fi
+        
+        # إذا لم يتم العثور عليه، حاول البحث عن "عيادة"
+        if [ -z "$CLINIC" ] || [ "$CLINIC" = "عيادة يوم" ] || [ "$CLINIC" = "" ]; then
           CLINIC=$(grep -o 'عيادة[^<"]*' page-clean.html | head -1 | xargs)
         fi
-        if [ -z "$CLINIC" ]; then
-          CLINIC=$(grep -o 'امراض[^<"]*' page-clean.html | head -1 | xargs)
+        
+        # إذا لم يتم العثور عليه، استخدم hxselect
+        if [ -z "$CLINIC" ] || [ "$CLINIC" = "عيادة يوم" ] || [ "$CLINIC" = "" ]; then
+          CLINIC=$(hxselect -c 'h6' page-clean.html 2>/dev/null | head -1 | xargs)
         fi
+        
         [ -z "$CLINIC" ] && CLINIC="غير معروف"
         
-        # ⭐️ رابط الحجز الأصلي
-        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
+        # ⭐️ استخراج التاريخ والوقت من الصفحة
+        # التاريخ: 09-05-2026
+        BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' page-clean.html | head -1)
+        # الوقت: 11:00
+        BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' page-clean.html | head -1)
         
-        # ⭐️ استخراج التاريخ من الصفحة
-        DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' page-clean.html | head -1)
-        if [ -n "$DATE" ]; then
+        if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
+          DATE="$BOOKING_DATE $BOOKING_TIME"
           DATE=$(echo "$DATE" | sed 's/-/\//g')
-          TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' page-clean.html | head -1)
-          DATE="$DATE $TIME"
         else
           DATE=$(date '+%d/%m/%Y %H:%M:%S')
         fi
+        
+        # ⭐️ استخراج رقم الموعد من الرابط
+        PATIENT_FROM_URL=$(echo "${{ steps.read_url.outputs.url }}" | grep -o '[0-9]\{7,8\}' | head -1)
+        
+        # ⭐️ رابط الحجز الأصلي
+        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
         # ⭐️ تحديث نفس ملف booking-result.json (المرة الأولى)
         cat > booking-result.json << EOF
@@ -114,7 +146,7 @@ jobs:
           "bookingDetails": {
             "doctorName": "$DOCTOR",
             "clinicName": "$CLINIC",
-            "patientNumber": "جاري الحجز...",
+            "patientNumber": "$PATIENT_FROM_URL",
             "currentNumber": "جاري الحجز...",
             "status": "⏳ في انتظار الحجز الساعة 7:00",
             "appointmentDate": "$DATE",
@@ -127,9 +159,10 @@ jobs:
         echo "👨‍⚕️ الطبيب: $DOCTOR"
         echo "🏥 العيادة: $CLINIC"
         echo "📅 التاريخ: $DATE"
+        echo "🔢 رقم الموعد: $PATIENT_FROM_URL"
         echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
     
-    # ⭐️ الخطوة 5: الانتظار حتى الساعة 7:00 صباحاً
+    # ⭐️ الخطوة 6: الانتظار حتى الساعة 7:00 صباحاً
     - name: Wait until 7:00 AM
       run: |
         echo "⏳ بدء الانتظار حتى الساعة 7:00 صباحاً..."
@@ -147,14 +180,25 @@ jobs:
           sleep 60
         done
     
-    # ⭐️ الخطوة 6: البحث عن زر "قم بالحجز الأن"
+    # ⭐️ الخطوة 7: البحث عن زر "قم بالحجز الأن" (بطريقة أكثر دقة)
     - name: Find booking button
       id: find_button
       run: |
-        BOOKING_LINK=$(grep -o 'href="[^"]*Booking/Find[^"]*"' page.html | head -1 | sed 's/href="//;s/"//g')
+        # ⭐️ البحث عن الرابط باستخدام عدة أنماط للتأكد من العثور عليه
+        BOOKING_LINK=$(grep -oE 'href="([^"]*Booking/Find[^"]*)"' page.html | head -1^']* | sed 's/href="//;s/"//g')
         
+        # إذا لم يتم العثور عليه بالطريقة الأولى، جرب طريقة أخرى
+        if [ -z "$BOOKING_LINK" ]; then
+          BOOKING_LINK=$(grep -o "href='[^']*Booking/Find['" page.html | head -1 | sed "s/href='//;s/'//g")
+        fi
+        
+        # إذا لم يتم العثور عليه، جرب البحث عن النص العربي للزر
+        if [ -z "$BOOKING_LINK" ]; then
+          BOOKING_LINK=$(grep -o 'href="[^"]*"' page.html | grep "Booking/Find" | head -1 | sed 's/href="//;s/"//g')
+        fi
+            
         if [ -n "$BOOKING_LINK" ]; then
-          echo "✅ تم العثور على زر الحجز"
+          echo "✅ تم العثور على زر الحجز: $BOOKING_LINK"
           echo "link=$BOOKING_LINK" >> $GITHUB_OUTPUT
           
           if [[ "$BOOKING_LINK" == https* ]]; then
@@ -168,7 +212,7 @@ jobs:
           echo "link=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 7: الضغط على زر الحجز (الساعة 7:00)
+    # ⭐️ الخطوة 8: الضغط على زر الحجز (الساعة 7:00)
     - name: Click booking button
       if: steps.find_button.outputs.link != ''
       run: |
@@ -185,7 +229,7 @@ jobs:
         
         echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
     
-    # ⭐️ الخطوة 8: استخراج رقم الدور وتحديث نفس الملف (المرة الثانية)
+    # ⭐️ الخطوة 9: استخراج رقم الدور وتحديث نفس الملف (المرة الثانية)
     - name: Extract queue number and update same file
       run: |
         echo "📋 استخراج رقم الدور من صفحة الحجز..."
@@ -202,15 +246,21 @@ jobs:
         
         # ⭐️ استخراج الرقم الحالي (من الصفحة)
         CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
-        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-clean.html | grep -o '[0-9]\+' | head -1)
+        if [ -z "$CURRENT" ]; then
+          CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-clean.html | grep -o '[0-9]\+' | head -1)
+        fi
+        if [ -z "$CURRENT" ]; then
+          CURRENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
+        fi
         [ -z "$CURRENT" ] && CURRENT="0"
         
-        # ⭐️ استخراج التاريخ
-        DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
-        if [ -n "$DATE" ]; then
+        # ⭐️ استخراج التاريخ من صفحة الحجز
+        BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
+        BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
+        
+        if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
+          DATE="$BOOKING_DATE $BOOKING_TIME"
           DATE=$(echo "$DATE" | sed 's/-/\//g')
-          TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
-          DATE="$DATE $TIME"
         else
           DATE=$(date '+%d/%m/%Y %H:%M:%S')
         fi
@@ -245,7 +295,7 @@ jobs:
         echo "📊 الرقم الحالي: $CURRENT"
         echo "📅 التاريخ: $DATE"
     
-    # ⭐️ رفع النتيجة
+    # ⭐️ الخطوة 10: رفع النتيجة
     - name: Upload result
       if: always()
       uses: actions/upload-artifact@v4
@@ -256,9 +306,11 @@ jobs:
           booking-url.json
           page.html
           booking-page.html
+          page-clean.html
+          booking-clean.html
         retention-days: 7
     
-    # ⭐️ حفظ النتيجة في المستودع
+    # ⭐️ الخطوة 11: حفظ النتيجة في المستودع
     - name: Commit and push result
       if: success()
       run: |
