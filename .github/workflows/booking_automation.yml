@@ -63,26 +63,47 @@ jobs:
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
     
-    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً) وتحديث الملف
+    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً) - طريقة محسنة
     - name: Extract doctor and clinic name
       id: extract_doctor
       run: |
         echo "📋 استخراج اسم الدكتور والعيادة..."
         
-        # ⭐️ اسم الطبيب
-        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        DOCTOR=$(echo "$DOCTOR" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
-        [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<"]*' page.html | head -1 | xargs)
+        # ⭐️ تنظيف الصفحة من الترميزات
+        cat page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > page-clean.html
+        
+        # ⭐️ استخراج اسم الدكتور - البحث عن <h5> أو النص بعد "د/"
+        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        if [ -z "$DOCTOR" ]; then
+          DOCTOR=$(grep -o 'د/[^<"]*' page-clean.html | head -1 | xargs)
+        fi
+        if [ -z "$DOCTOR" ]; then
+          DOCTOR=$(grep -o 'د/[^ ]* [^ ]* [^ ]*' page-clean.html | head -1 | xargs)
+        fi
         [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
         
-        # ⭐️ اسم العيادة
-        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        CLINIC=$(echo "$CLINIC" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
-        [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<"]*' page.html | head -1 | xargs)
+        # ⭐️ استخراج اسم العيادة - البحث عن <h6> أو النص بعد "عيادة"
+        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        if [ -z "$CLINIC" ]; then
+          CLINIC=$(grep -o 'عيادة[^<"]*' page-clean.html | head -1 | xargs)
+        fi
+        if [ -z "$CLINIC" ]; then
+          CLINIC=$(grep -o 'امراض[^<"]*' page-clean.html | head -1 | xargs)
+        fi
         [ -z "$CLINIC" ] && CLINIC="غير معروف"
         
         # ⭐️ رابط الحجز الأصلي
         ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
+        
+        # ⭐️ استخراج التاريخ من الصفحة
+        DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' page-clean.html | head -1)
+        if [ -n "$DATE" ]; then
+          DATE=$(echo "$DATE" | sed 's/-/\//g')
+          TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' page-clean.html | head -1)
+          DATE="$DATE $TIME"
+        else
+          DATE=$(date '+%d/%m/%Y %H:%M:%S')
+        fi
         
         # ⭐️ تحديث نفس ملف booking-result.json (المرة الأولى)
         cat > booking-result.json << EOF
@@ -96,7 +117,7 @@ jobs:
             "patientNumber": "جاري الحجز...",
             "currentNumber": "جاري الحجز...",
             "status": "⏳ في انتظار الحجز الساعة 7:00",
-            "appointmentDate": "جاري الحجز...",
+            "appointmentDate": "$DATE",
             "bookingURL": "$ORIGINAL_URL"
           }
         }
@@ -105,6 +126,7 @@ jobs:
         echo "✅ تم تحديث booking-result.json ببيانات الطبيب"
         echo "👨‍⚕️ الطبيب: $DOCTOR"
         echo "🏥 العيادة: $CLINIC"
+        echo "📅 التاريخ: $DATE"
         echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
     
     # ⭐️ الخطوة 5: الانتظار حتى الساعة 7:00 صباحاً
@@ -168,24 +190,32 @@ jobs:
       run: |
         echo "📋 استخراج رقم الدور من صفحة الحجز..."
         
-        # ⭐️ استخراج رقم المريض
-        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
-        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'موعدكم[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
-        [ -z "$PATIENT" ] && PATIENT=$(grep -o '[0-9]\{4,8\}' booking-page.html | head -1)
+        # ⭐️ تنظيف الصفحة
+        cat booking-page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > booking-clean.html
+        
+        # ⭐️ استخراج رقم المريض - من الرابط أو من الصفحة
+        PATIENT=$(echo "${{ steps.read_url.outputs.url }}" | grep -o '[0-9]\{7,8\}' | head -1)
+        if [ -z "$PATIENT" ]; then
+          PATIENT=$(grep -o '[0-9]\{7,8\}' booking-clean.html | head -1)
+        fi
         [ -z "$PATIENT" ] && PATIENT="غير معروف"
         
-        # ⭐️ استخراج الرقم الحالي
-        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
-        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-page.html | grep -o '[0-9]\+' | head -1)
+        # ⭐️ استخراج الرقم الحالي (من الصفحة)
+        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
+        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-clean.html | grep -o '[0-9]\+' | head -1)
         [ -z "$CURRENT" ] && CURRENT="0"
         
         # ⭐️ استخراج التاريخ
-        DATE=$(grep -o '<small[^>]*>[^<]*</small>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        [ -z "$DATE" ] && DATE=$(grep -o '[0-9]\{2\}/[0-9]\{2\}/[0-9]\{4\} [0-9]\{2\}:[0-9]\{2\}' booking-page.html | head -1)
-        [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
+        DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
+        if [ -n "$DATE" ]; then
+          DATE=$(echo "$DATE" | sed 's/-/\//g')
+          TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
+          DATE="$DATE $TIME"
+        else
+          DATE=$(date '+%d/%m/%Y %H:%M:%S')
+        fi
         
-        # ⭐️ قراءة اسم الدكتور والعيادة من الملف الحالي (بدون إنشاء ملف جديد)
+        # ⭐️ قراءة اسم الدكتور والعيادة من الملف الحالي
         DOCTOR=$(cat booking-result.json | jq -r '.bookingDetails.doctorName')
         CLINIC=$(cat booking-result.json | jq -r '.bookingDetails.clinicName')
         ORIGINAL_URL=$(cat booking-result.json | jq -r '.bookingDetails.bookingURL')
