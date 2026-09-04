@@ -1,12 +1,16 @@
 name: Elite Hospital Booking Automation
 
 on:
+  # ⭐️ جدولة يومية الساعة 7:00 صباحاً بتوقيت مصر
+  schedule:
+    - cron: '0 5 * * *'  # 5:00 UTC = 7:00 صباحاً بتوقيت مصر (UTC+2)
+  
+  # ⭐️ يمكن تشغيله يدوياً أيضاً
   workflow_dispatch:
     inputs:
-      scheduled_time:
-        description: 'وقت بدء التشغيل (6:59)'
-        required: true
-        default: '06:59'
+      booking_url:
+        description: 'رابط الموعد (اختياري - سيتم قراءته من الملف إذا ترك فارغاً)'
+        required: false
         type: string
 
 jobs:
@@ -24,21 +28,16 @@ jobs:
     
     - name: Install dependencies
       run: |
-        npm install playwright node-cron
+        npm install playwright
         npx playwright install
     
     - name: Create booking script
       run: |
         cat > booking.js << 'EOF'
         const { chromium } = require('playwright');
-        const cron = require('node-cron');
         const fs = require('fs');
-        const https = require('https');
         
-        // ⭐️ وقت التنفيذ المطلوب (7:00 صباحاً)
-        const EXECUTION_TIME = '07:00';
-        
-        // ⭐️ قراءة الرابط من ملف JSON
+        // ⭐️ قراءة الرابط من ملف JSON (تم حفظه بواسطة التطبيق)
         function getBookingURL() {
           try {
             const data = fs.readFileSync('booking-url.json', 'utf8');
@@ -50,13 +49,13 @@ jobs:
           }
         }
         
-        // ⭐️ حفظ النتيجة في ملف JSON
+        // ⭐️ حفظ النتيجة
         function saveResult(result) {
           fs.writeFileSync('booking-result.json', JSON.stringify(result, null, 2));
           console.log('✅ تم حفظ النتيجة');
         }
         
-        // ⭐️ تحديث حالة الرابط إلى "completed"
+        // ⭐️ تحديث حالة الرابط
         function updateBookingStatus() {
           try {
             const data = fs.readFileSync('booking-url.json', 'utf8');
@@ -72,7 +71,11 @@ jobs:
         
         // ⭐️ وظيفة الحجز الرئيسية
         async function performBooking() {
-          const bookingURL = getBookingURL();
+          // ⭐️ استخدام الرابط من الإدخال أو من الملف
+          const inputURL = process.env.INPUT_BOOKING_URL;
+          const fileURL = getBookingURL();
+          const bookingURL = inputURL || fileURL;
+          
           if (!bookingURL) {
             saveResult({
               success: false,
@@ -112,7 +115,7 @@ jobs:
               return { doctorName, clinicName, patientNumber, currentNumber, appointmentDate, bookingURL: bookingLink };
             });
             
-            // 3. البحث عن زر الحجز
+            // 3. البحث عن زر الحجز والضغط عليه
             console.log('🔍 جاري البحث عن زر الحجز...');
             const bookingButton = await page.$('a[href*="/Booking/Find"]');
             if (bookingButton) {
@@ -120,6 +123,8 @@ jobs:
               await bookingButton.click();
               await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
               console.log('✅ تم الضغط على زر الحجز بنجاح');
+            } else {
+              console.log('⚠️ لم يتم العثور على زر الحجز');
             }
             
             // 4. حفظ النتيجة
@@ -155,48 +160,19 @@ jobs:
           }
         }
         
-        // ⭐️ دالة الانتظار حتى وقت محدد
-        function waitUntilTime(targetTime) {
-          return new Promise((resolve) => {
-            const now = new Date();
-            const target = new Date();
-            const [hours, minutes] = targetTime.split(':');
-            target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-            
-            if (target <= now) {
-              target.setDate(target.getDate() + 1);
-            }
-            
-            const diff = target - now;
-            console.log(`⏳ انتظار ${Math.floor(diff / 60000)} دقيقة حتى الساعة ${targetTime}`);
-            setTimeout(resolve, diff);
-          });
-        }
-        
-        // ⭐️ التنفيذ الرئيسي
-        async function main() {
-          console.log('🔄 بدء تشغيل نظام الحجز الآلي...');
-          console.log(`⏰ سيتم التنفيذ الساعة ${EXECUTION_TIME}`);
-          
-          // الانتظار حتى الساعة 7:00 صباحاً
-          await waitUntilTime(EXECUTION_TIME);
-          
-          // تنفيذ الحجز
-          await performBooking();
-        }
-        
-        main();
+        // ⭐️ التنفيذ الفوري
+        performBooking();
         EOF
     
     - name: Run booking automation
       env:
-        SCHEDULED_TIME: ${{ github.event.inputs.scheduled_time }}
+        INPUT_BOOKING_URL: ${{ github.event.inputs.booking_url }}
       run: |
         node booking.js
     
     - name: Upload result
       if: always()
-      uses: actions/upload-artifact@v4  # ✅ تم التحديث إلى v4
+      uses: actions/upload-artifact@v4
       with:
         name: booking-result
         path: booking-result.json
