@@ -1,0 +1,35 @@
+name: 🏥 حجز مستشفى إيليت
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: تجهيز بايثون
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: تثبيت المتطلبات
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+          playwright install-deps
+      
+      - name: تشغيل الحجز
+        run: python booking.py
+        env:
+          BOOKING_URL: ${{ secrets.BOOKING_URL }}
+      
+      - name: رفع النتيجة
+        uses: actions/upload-artifact@v3
+        with:
+          name: booking-result
+          path: booking_result.json
