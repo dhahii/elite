@@ -1,45 +1,221 @@
-name: 🏥 حجز مستشفى إيليت
+name: Elite Hospital Booking Automation
 
 on:
-  schedule:
-    - cron: '0 5 * * *'
-  repository_dispatch:
-    types: [book_appointment]
   workflow_dispatch:
+    inputs:
+      booking_url:
+        description: 'رابط صفحة الموعد'
+        required: true
+        type: string
+      scheduled_time:
+        description: 'وقت التنفيذ'
+        required: true
+        default: '07:00'
+        type: string
 
 jobs:
-  book:
+  book_appointment:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: تجهيز بايثون
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      
-      - name: تثبيت Playwright
-        run: |
-          pip install playwright
-          playwright install chromium
-          playwright install-deps
-      
-      - name: تشغيل الحجز
-        run: python booking.py
-        env:
-          BOOKING_URL: ${{ github.event.client_payload.booking_url }}
-      
-      - name: حفظ النتيجة
-        uses: actions/upload-artifact@v4  # ✅ تم التحديث إلى v4
-        with:
-          name: booking-result
-          path: booking_result.json
-      
-      - name: تحديث الملف في المستودع
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git add booking_result.json
-          git commit -m "Auto-update booking result [skip ci]" || echo "No changes"
-          git push
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install dependencies
+      run: |
+        npm install puppeteer cheerio node-cron
+    
+    - name: Create booking script
+      run: |
+        cat > booking.js << 'EOF'
+        const puppeteer = require('puppeteer');
+        const cron = require('node-cron');
+        const fs = require('fs');
+        
+        const bookingURL = process.env.BOOKING_URL;
+        const scheduledTime = process.env.SCHEDULED_TIME;
+        
+        console.log(`📅 سيتم تنفيذ الحجز في الساعة ${scheduledTime}`);
+        console.log(`🔗 رابط الموعد: ${bookingURL}`);
+        
+        async function performBooking() {
+          const browser = await puppeteer.launch({
+            headless: "new",
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          
+          try {
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1280, height: 800 });
+            
+            // 1. فتح رابط الموعد
+            console.log('🌐 جاري فتح الرابط...');
+            await page.goto(bookingURL, { 
+              waitUntil: 'networkidle2',
+              timeout: 30000 
+            });
+            
+            // 2. انتظار تحميل الصفحة
+            await page.waitForSelector('.jumbotron', { timeout: 10000 });
+            
+            // 3. استخراج بيانات الطبيب والمريض
+            console.log('📋 جاري استخراج البيانات...');
+            const bookingData = await page.evaluate(() => {
+              // استخراج اسم الطبيب
+              const doctorNameEl = document.querySelector('.jumbotron h5');
+              const doctorName = doctorNameEl?.textContent?.trim() || 'غير معروف';
+              
+              // استخراج اسم العيادة
+              const clinicNameEl = document.querySelector('.jumbotron h6');
+              const clinicName = clinicNameEl?.textContent?.trim() || 'غير معروف';
+              
+              // استخراج رقم المريض
+              const patientNumberEl = document.querySelector('.jumbotron h1');
+              const patientNumber = patientNumberEl?.textContent?.trim() || 'غير معروف';
+              
+              // استخراج الرقم الحالي
+              const currentNumberEl = document.querySelector('.jumbotron h2 span');
+              const currentNumber = currentNumberEl?.textContent?.trim() || '0';
+              
+              // استخراج التاريخ
+              const dateEl = document.querySelector('.jumbotron small');
+              const appointmentDate = dateEl?.textContent?.trim() || new Date().toLocaleString('ar-EG');
+              
+              // رابط الحجز
+              const bookingLinkEl = document.querySelector('a[href*="/Booking/Find"]');
+              const bookingURL = bookingLinkEl?.href || '';
+              
+              return {
+                doctorName,
+                clinicName,
+                patientNumber,
+                currentNumber,
+                appointmentDate,
+                bookingURL
+              };
+            });
+            
+            console.log('✅ تم استخراج البيانات:', bookingData);
+            
+            // 4. البحث عن زر الحجز والضغط عليه
+            console.log('🔍 جاري البحث عن زر الحجز...');
+            const bookingButton = await page.$('a[href*="/Booking/Find"]');
+            if (bookingButton) {
+              console.log('🖱️ جاري الضغط على زر الحجز...');
+              await bookingButton.click();
+              
+              // انتظار تحميل صفحة الحجز
+              await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+              
+              // استخراج تفاصيل إضافية
+              const additionalDetails = await page.evaluate(() => {
+                const details = {};
+                document.querySelectorAll('.form-group, .col-md-6, .row').forEach(el => {
+                  const label = el.querySelector('label, .label, strong')?.textContent?.trim();
+                  const input = el.querySelector('input, .value, span');
+                  const value = input?.value || input?.textContent?.trim() || '';
+                  if (label && value) {
+                    details[label] = value;
+                  }
+                });
+                return details;
+              });
+              
+              bookingData.additionalDetails = additionalDetails;
+              console.log('📋 تفاصيل إضافية:', additionalDetails);
+            }
+            
+            // 5. حفظ النتيجة في ملف JSON
+            const result = {
+              success: true,
+              message: 'تم الحجز بنجاح',
+              timestamp: new Date().toISOString(),
+              bookingDetails: {
+                doctorName: bookingData.doctorName,
+                clinicName: bookingData.clinicName,
+                patientNumber: bookingData.patientNumber,
+                currentNumber: bookingData.currentNumber,
+                status: '✅ تم الحجز بنجاح',
+                appointmentDate: bookingData.appointmentDate,
+                bookingURL: bookingData.bookingURL
+              }
+            };
+            
+            fs.writeFileSync('booking-result.json', JSON.stringify(result, null, 2));
+            console.log('✅ تم الحجز بنجاح!');
+            console.log('📊 النتائج:', JSON.stringify(result, null, 2));
+            
+          } catch (error) {
+            console.error('❌ حدث خطأ:', error.message);
+            const errorResult = {
+              success: false,
+              message: error.message,
+              timestamp: new Date().toISOString(),
+              bookingDetails: null
+            };
+            fs.writeFileSync('booking-result.json', JSON.stringify(errorResult, null, 2));
+          } finally {
+            await browser.close();
+          }
+        }
+        
+        // دالة الانتظار حتى وقت محدد
+        function waitUntilTime(targetTime) {
+          return new Promise((resolve) => {
+            const now = new Date();
+            const target = new Date();
+            const [hours, minutes] = targetTime.split(':');
+            target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+            
+            if (target <= now) {
+              target.setDate(target.getDate() + 1);
+            }
+            
+            const diff = target - now;
+            console.log(`⏳ انتظار ${Math.floor(diff / 60000)} دقيقة حتى الساعة ${targetTime}`);
+            
+            setTimeout(resolve, diff);
+          });
+        }
+        
+        // التنفيذ الرئيسي
+        async function main() {
+          console.log('🔄 بدء عملية الحجز...');
+          
+          // الانتظار حتى الساعة المحددة
+          await waitUntilTime(scheduledTime);
+          
+          // تنفيذ الحجز
+          await performBooking();
+        }
+        
+        main();
+        EOF
+    
+    - name: Run booking automation
+      env:
+        BOOKING_URL: ${{ github.event.inputs.booking_url }}
+        SCHEDULED_TIME: ${{ github.event.inputs.scheduled_time }}
+      run: |
+        node booking.js
+    
+    - name: Upload booking result as artifact
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: booking-result
+        path: booking-result.json
+    
+    - name: Commit and push result
+      if: success()
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        git add booking-result.json
+        git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
+        git push
