@@ -1,14 +1,14 @@
 {
   "success": true,
   "message": "تم الحجز بنجاح",
-  "timestamp": "2026-09-04T22:06:10+00:00",
+  "timestamp": "2026-09-04T22:16:24+00:00",
   "bookingDetails": {
     "doctorName": "/   ",
     "clinicName": "    ",
     "patientNumber": "غير معروف",
     "currentNumber": "0",
     "status": "✅ تم الحجز بنجاح",
-    "appointmentDate": "1056503",
+    "appointmentDate": "04/09/2026 22:16:24",
     "bookingURL": "https://www.elitehospital.org/Queue/1056503"
   }
 }
