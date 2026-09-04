@@ -63,38 +63,48 @@ jobs:
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
     
-    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً)
+    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً) وتحديث الملف
     - name: Extract doctor and clinic name
       id: extract_doctor
       run: |
         echo "📋 استخراج اسم الدكتور والعيادة..."
         
-        # ⭐️ اسم الطبيب - من <h5>
+        # ⭐️ اسم الطبيب
         DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         DOCTOR=$(echo "$DOCTOR" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
         [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<"]*' page.html | head -1 | xargs)
         [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
         
-        # ⭐️ اسم العيادة - من <h6>
+        # ⭐️ اسم العيادة
         CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         CLINIC=$(echo "$CLINIC" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
         [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<"]*' page.html | head -1 | xargs)
         [ -z "$CLINIC" ] && CLINIC="غير معروف"
         
-        # ⭐️ حفظ البيانات في ملف مؤقت
-        echo "doctor=$DOCTOR" >> $GITHUB_OUTPUT
-        echo "clinic=$CLINIC" >> $GITHUB_OUTPUT
+        # ⭐️ رابط الحجز الأصلي
+        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
-        # ⭐️ إنشاء ملف JSON مؤقت للبيانات
-        cat > doctor-info.json << EOF
+        # ⭐️ تحديث نفس ملف booking-result.json (المرة الأولى)
+        cat > booking-result.json << EOF
         {
-          "doctorName": "$DOCTOR",
-          "clinicName": "$CLINIC"
+          "success": true,
+          "message": "تم استخراج بيانات الطبيب",
+          "timestamp": "$(date -Iseconds)",
+          "bookingDetails": {
+            "doctorName": "$DOCTOR",
+            "clinicName": "$CLINIC",
+            "patientNumber": "جاري الحجز...",
+            "currentNumber": "جاري الحجز...",
+            "status": "⏳ في انتظار الحجز الساعة 7:00",
+            "appointmentDate": "جاري الحجز...",
+            "bookingURL": "$ORIGINAL_URL"
+          }
         }
         EOF
         
-        echo "✅ اسم الدكتور: $DOCTOR"
-        echo "✅ العيادة: $CLINIC"
+        echo "✅ تم تحديث booking-result.json ببيانات الطبيب"
+        echo "👨‍⚕️ الطبيب: $DOCTOR"
+        echo "🏥 العيادة: $CLINIC"
         echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
     
     # ⭐️ الخطوة 5: الانتظار حتى الساعة 7:00 صباحاً
@@ -102,7 +112,6 @@ jobs:
       run: |
         echo "⏳ بدء الانتظار حتى الساعة 7:00 صباحاً..."
         
-        # حساب الوقت المتبقي حتى 7:00
         while true; do
           CURRENT_HOUR=$(date +%H)
           CURRENT_MIN=$(date +%M)
@@ -154,12 +163,12 @@ jobs:
         
         echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
     
-    # ⭐️ الخطوة 8: استخراج رقم الدور من صفحة الحجز
-    - name: Extract queue number
+    # ⭐️ الخطوة 8: استخراج رقم الدور وتحديث نفس الملف (المرة الثانية)
+    - name: Extract queue number and update same file
       run: |
         echo "📋 استخراج رقم الدور من صفحة الحجز..."
         
-        # ⭐️ استخراج رقم المريض من صفحة الحجز
+        # ⭐️ استخراج رقم المريض
         PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
         [ -z "$PATIENT" ] && PATIENT=$(grep -o 'موعدكم[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
@@ -176,14 +185,12 @@ jobs:
         [ -z "$DATE" ] && DATE=$(grep -o '[0-9]\{2\}/[0-9]\{2\}/[0-9]\{4\} [0-9]\{2\}:[0-9]\{2\}' booking-page.html | head -1)
         [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
         
-        # ⭐️ قراءة اسم الدكتور والعيادة من الملف المؤقت
-        DOCTOR=$(cat doctor-info.json | jq -r '.doctorName')
-        CLINIC=$(cat doctor-info.json | jq -r '.clinicName')
+        # ⭐️ قراءة اسم الدكتور والعيادة من الملف الحالي (بدون إنشاء ملف جديد)
+        DOCTOR=$(cat booking-result.json | jq -r '.bookingDetails.doctorName')
+        CLINIC=$(cat booking-result.json | jq -r '.bookingDetails.clinicName')
+        ORIGINAL_URL=$(cat booking-result.json | jq -r '.bookingDetails.bookingURL')
         
-        # ⭐️ رابط الحجز الأصلي من ملف JSON
-        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
-        
-        # ⭐️ تحديث ملف النتيجة نفسه (وليس إنشاء ملف جديد)
+        # ⭐️ تحديث نفس ملف booking-result.json (المرة الثانية)
         cat > booking-result.json << EOF
         {
           "success": true,
@@ -201,7 +208,7 @@ jobs:
         }
         EOF
         
-        echo "✅ تم تحديث ملف النتيجة بنجاح"
+        echo "✅ تم تحديث نفس ملف booking-result.json بالبيانات النهائية"
         echo "👨‍⚕️ الطبيب: $DOCTOR"
         echo "🏥 العيادة: $CLINIC"
         echo "🔢 رقمك: $PATIENT"
@@ -217,7 +224,6 @@ jobs:
         path: |
           booking-result.json
           booking-url.json
-          doctor-info.json
           page.html
           booking-page.html
         retention-days: 7
@@ -228,6 +234,6 @@ jobs:
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-        git add booking-result.json booking-url.json doctor-info.json 2>/dev/null || true
+        git add booking-result.json booking-url.json 2>/dev/null || true
         git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
         git push
