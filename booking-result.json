@@ -1,14 +1,14 @@
 {
   "success": true,
   "message": "تم الحجز بنجاح",
-  "timestamp": "2026-09-04T22:41:18+00:00",
+  "timestamp": "2026-09-04T22:42:45+00:00",
   "bookingDetails": {
     "doctorName": "د/احمد عبد الحميد عثمان",
     "clinicName": "امراض السكر و الغدد الصماء",
     "patientNumber": "1056503",
     "currentNumber": "0",
     "status": "✅ تم الحجز بنجاح",
-    "appointmentDate": "04/09/2026 22:41:18",
+    "appointmentDate": "04/09/2026 22:42:45",
     "bookingURL": "https://www.elitehospital.org/Queue/1056503"
   }
 }
