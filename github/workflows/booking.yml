@@ -2,8 +2,8 @@ name: 🏥 حجز مستشفى إيليت
 
 on:
   schedule:
-    - cron: '0 5 * * *'
-  workflow_dispatch:
+    - cron: '0 5 * * *'          # كل يوم 7 صباحاً مصر
+  workflow_dispatch:              # تشغيل يدوي
     inputs:
       booking_url:
         description: 'رابط الحجز'
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.10'
       
-      - name: تثبيت المتطلبات
+      - name: تثبيت Playwright
         run: |
           pip install -r requirements.txt
           playwright install chromium
@@ -34,19 +34,19 @@ jobs:
         env:
           BOOKING_URL: ${{ github.event.inputs.booking_url || secrets.BOOKING_URL || 'https://www.elitehospital.org/Booking/Find?culture=ar' }}
       
-      - name: رفع النتيجة
+      - name: حفظ النتيجة
         uses: actions/upload-artifact@v3
         with:
           name: booking-result
           path: booking_result.json
       
-      - name: تجهيز الملفات
+      - name: تحديث GitHub Pages
         run: |
           mkdir -p docs/api
           if [ -f booking_result.json ]; then
             cp booking_result.json docs/api/status.json
           else
-            echo '{"status":"⏳ لا توجد نتيجة بعد"}' > docs/api/status.json
+            echo '{"status":"⏳ لا توجد نتيجة"}' > docs/api/status.json
           fi
       
       - name: رفع الصفحة
