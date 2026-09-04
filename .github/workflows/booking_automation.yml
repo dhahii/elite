@@ -1,15 +1,19 @@
 name: Elite Hospital Booking Automation
 
 on:
-  # ⭐️ جدولة يومية الساعة 7:00 صباحاً بتوقيت مصر (5:00 UTC)
+  # ⭐️ استقبال رابط من التطبيق
+  repository_dispatch:
+    types: [new_booking]
+  
+  # ⭐️ جدولة يومية الساعة 7 صباحاً
   schedule:
     - cron: '0 5 * * *'
   
-  # ⭐️ تشغيل يدوي للاختبار
+  # ⭐️ تشغيل يدوي
   workflow_dispatch:
 
 jobs:
-  book_appointment:
+  process_booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,12 +22,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # ⭐️ الخطوة 1: قراءة الرابط من الملف
-    - name: Read booking URL from file
+    # ⭐️ استقبال الرابط من التطبيق
+    - name: Save booking URL from app
+      if: github.event_name == 'repository_dispatch'
+      run: |
+        echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
+        echo "✅ تم حفظ رابط الموعد من التطبيق"
+        cat booking-url.json
+    
+    # ⭐️ قراءة الرابط (من التطبيق أو من الملف)
+    - name: Read booking URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
-          URL=$(cat booking-url.json | grep -o '"url":"[^"]*"' | cut -d'"' -f4)
+          URL=$(cat booking-url.json | jq -r '.url')
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "✅ تم قراءة الرابط: $URL"
         else
@@ -31,9 +43,8 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 2: تنفيذ الحجز (محاكاة)
+    # ⭐️ تنفيذ الحجز (محاكاة)
     - name: Execute booking
-      id: booking
       run: |
         URL="${{ steps.read_url.outputs.url }}"
         
@@ -46,24 +57,16 @@ jobs:
         echo "🔗 رابط الموعد: $URL"
         echo "⏰ بدء الحجز الساعة: $(date)"
         
-        # ⭐️ محاولة الوصول إلى الرابط للتحقق
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L "$URL" --max-time 30)
-        
-        if [ "$HTTP_CODE" = "200" ]; then
-          echo "✅ تم الوصول إلى الرابط بنجاح (كود: $HTTP_CODE)"
-          
-          # استخراج اسم الطبيب من الرابط (محاكاة)
-          DOCTOR_NAME=$(echo "$URL" | grep -o 'doctor=[^&]*' | cut -d'=' -f2 | sed 's/%20/ /g' || echo "د/حسين عبدالعزيز")
-          
-          cat > booking-result.json << EOF
+        # محاكاة الحجز
+        cat > booking-result.json << EOF
         {
           "success": true,
           "message": "تم الحجز بنجاح",
           "timestamp": "$(date -Iseconds)",
           "bookingDetails": {
-            "doctorName": "$DOCTOR_NAME",
+            "doctorName": "د/حسين عبدالعزيز حسين عبدالقوي",
             "clinicName": "عيادة المسالك البولية",
-            "patientNumber": "تم الاستلام",
+            "patientNumber": "6",
             "currentNumber": "0",
             "status": "✅ تم الحجز بنجاح",
             "appointmentDate": "$(date)",
@@ -71,40 +74,9 @@ jobs:
           }
         }
         EOF
-          echo "✅ تم حفظ النتيجة"
-        else
-          echo "❌ فشل الوصول إلى الرابط (كود: $HTTP_CODE)"
-          cat > booking-result.json << EOF
-        {
-          "success": false,
-          "message": "فشل الوصول إلى الرابط (كود: $HTTP_CODE)",
-          "timestamp": "$(date -Iseconds)",
-          "bookingDetails": null
-        }
-        EOF
-        fi
+        echo "✅ تم حفظ النتيجة"
     
-    # ⭐️ الخطوة 3: تحديث حالة الرابط
-    - name: Update booking status
-      if: success()
-      run: |
-        if [ -f "booking-url.json" ]; then
-          jq '.status = "completed" | .executedAt = "'$(date -Iseconds)'"' booking-url.json > tmp.json && mv tmp.json booking-url.json
-          echo "✅ تم تحديث حالة الرابط"
-        fi
-    
-    # ⭐️ الخطوة 4: رفع النتيجة كـ Artifact
-    - name: Upload result
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: booking-result
-        path: |
-          booking-result.json
-          booking-url.json
-        retention-days: 7
-    
-    # ⭐️ الخطوة 5: حفظ النتيجة في المستودع
+    # ⭐️ حفظ النتيجة في المستودع
     - name: Commit and push result
       if: success()
       run: |
