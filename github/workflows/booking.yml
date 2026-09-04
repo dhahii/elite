@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 5 * * *'
   workflow_dispatch:
+    inputs:
+      booking_url:
+        description: 'رابط الحجز'
+        required: true
+        default: 'https://www.elitehospital.org/Booking/Find?culture=ar'
+        type: string
 
 jobs:
   book:
@@ -26,10 +32,27 @@ jobs:
       - name: تشغيل الحجز
         run: python booking.py
         env:
-          BOOKING_URL: ${{ secrets.BOOKING_URL }}
+          BOOKING_URL: ${{ github.event.inputs.booking_url || secrets.BOOKING_URL || 'https://www.elitehospital.org/Booking/Find?culture=ar' }}
       
       - name: رفع النتيجة
         uses: actions/upload-artifact@v3
         with:
           name: booking-result
           path: booking_result.json
+      
+      - name: تجهيز الملفات
+        run: |
+          mkdir -p docs/api
+          if [ -f booking_result.json ]; then
+            cp booking_result.json docs/api/status.json
+          else
+            echo '{"status":"⏳ لا توجد نتيجة بعد"}' > docs/api/status.json
+          fi
+      
+      - name: رفع الصفحة
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: docs/
+      
+      - name: نشر الصفحة
+        uses: actions/deploy-pages@v2
