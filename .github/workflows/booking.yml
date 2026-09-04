@@ -1,15 +1,10 @@
+# .github/workflows/booking.yml
 name: 🏥 حجز مستشفى إيليت
 
 on:
   schedule:
-    - cron: '0 5 * * *'          # كل يوم 7 صباحاً مصر
-  workflow_dispatch:              # تشغيل يدوي
-    inputs:
-      booking_url:
-        description: 'رابط الحجز'
-        required: true
-        default: 'https://www.elitehospital.org/Booking/Find?culture=ar'
-        type: string
+    - cron: '0 5 * * *'          # 7 صباحاً مصر
+  workflow_dispatch:              # للتشغيل اليدوي
 
 jobs:
   book:
@@ -25,14 +20,14 @@ jobs:
       
       - name: تثبيت Playwright
         run: |
-          pip install -r requirements.txt
+          pip install playwright
           playwright install chromium
           playwright install-deps
       
       - name: تشغيل الحجز
         run: python booking.py
         env:
-          BOOKING_URL: ${{ github.event.inputs.booking_url || secrets.BOOKING_URL || 'https://www.elitehospital.org/Booking/Find?culture=ar' }}
+          BOOKING_URL: ${{ secrets.BOOKING_URL }}   # الرابط من التطبيق
       
       - name: حفظ النتيجة
         uses: actions/upload-artifact@v3
@@ -40,19 +35,15 @@ jobs:
           name: booking-result
           path: booking_result.json
       
-      - name: تحديث GitHub Pages
+      - name: نشر النتيجة
         run: |
           mkdir -p docs/api
-          if [ -f booking_result.json ]; then
-            cp booking_result.json docs/api/status.json
-          else
-            echo '{"status":"⏳ لا توجد نتيجة"}' > docs/api/status.json
-          fi
+          cp booking_result.json docs/api/status.json
       
       - name: رفع الصفحة
         uses: actions/upload-pages-artifact@v2
         with:
           path: docs/
       
-      - name: نشر الصفحة
+      - name: نشر
         uses: actions/deploy-pages@v2
