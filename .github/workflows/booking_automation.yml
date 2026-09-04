@@ -1,16 +1,21 @@
 name: Elite Hospital Booking Automation
 
 on:
-  # ⭐️ جدولة يومية الساعة 7:00 صباحاً بتوقيت مصر
+  # ⭐️ جدولة يومية الساعة 7:00 صباحاً بتوقيت مصر (5:00 UTC)
   schedule:
-    - cron: '0 5 * * *'  # 5:00 UTC = 7:00 صباحاً بتوقيت مصر (UTC+2)
+    - cron: '0 5 * * *'
   
-  # ⭐️ يمكن تشغيله يدوياً أيضاً
+  # ⭐️ تشغيل يدوي من خلال GitHub Actions
   workflow_dispatch:
     inputs:
       booking_url:
         description: 'رابط الموعد (اختياري - سيتم قراءته من الملف إذا ترك فارغاً)'
         required: false
+        type: string
+      scheduled_time:
+        description: 'وقت التنفيذ (للاختبار)'
+        required: false
+        default: '07:00'
         type: string
 
 jobs:
@@ -49,13 +54,13 @@ jobs:
           }
         }
         
-        // ⭐️ حفظ النتيجة
+        // ⭐️ حفظ النتيجة في ملف JSON
         function saveResult(result) {
           fs.writeFileSync('booking-result.json', JSON.stringify(result, null, 2));
           console.log('✅ تم حفظ النتيجة');
         }
         
-        // ⭐️ تحديث حالة الرابط
+        // ⭐️ تحديث حالة الرابط إلى "completed"
         function updateBookingStatus() {
           try {
             const data = fs.readFileSync('booking-url.json', 'utf8');
@@ -77,6 +82,7 @@ jobs:
           const bookingURL = inputURL || fileURL;
           
           if (!bookingURL) {
+            console.log('⚠️ لا يوجد رابط للحجز');
             saveResult({
               success: false,
               message: 'لا يوجد رابط للحجز',
@@ -100,29 +106,93 @@ jobs:
             
             // 1. فتح الرابط
             console.log('🌐 جاري فتح الرابط...');
-            await page.goto(bookingURL, { waitUntil: 'networkidle2', timeout: 30000 });
+            await page.goto(bookingURL, { 
+              waitUntil: 'networkidle2', 
+              timeout: 60000 
+            });
             
             // 2. استخراج البيانات
             console.log('📋 جاري استخراج البيانات...');
             const bookingData = await page.evaluate(() => {
-              const doctorName = document.querySelector('.jumbotron h5')?.textContent?.trim() || 'غير معروف';
-              const clinicName = document.querySelector('.jumbotron h6')?.textContent?.trim() || 'غير معروف';
-              const patientNumber = document.querySelector('.jumbotron h1')?.textContent?.trim() || 'غير معروف';
-              const currentNumber = document.querySelector('.jumbotron h2 span')?.textContent?.trim() || '0';
-              const appointmentDate = document.querySelector('.jumbotron small')?.textContent?.trim() || new Date().toLocaleString('ar-EG');
-              const bookingLink = document.querySelector('a[href*="/Booking/Find"]')?.href || '';
+              // استخراج اسم الطبيب
+              const doctorNameEl = document.querySelector('.jumbotron h5');
+              const doctorName = doctorNameEl?.textContent?.trim() || 'غير معروف';
               
-              return { doctorName, clinicName, patientNumber, currentNumber, appointmentDate, bookingURL: bookingLink };
+              // استخراج اسم العيادة
+              const clinicNameEl = document.querySelector('.jumbotron h6');
+              const clinicName = clinicNameEl?.textContent?.trim() || 'غير معروف';
+              
+              // استخراج رقم المريض
+              const patientNumberEl = document.querySelector('.jumbotron h1');
+              const patientNumber = patientNumberEl?.textContent?.trim() || 'غير معروف';
+              
+              // استخراج الرقم الحالي
+              const currentNumberEl = document.querySelector('.jumbotron h2 span');
+              const currentNumber = currentNumberEl?.textContent?.trim() || '0';
+              
+              // استخراج التاريخ
+              const dateEl = document.querySelector('.jumbotron small');
+              const appointmentDate = dateEl?.textContent?.trim() || new Date().toLocaleString('ar-EG');
+              
+              // رابط الحجز
+              const bookingLinkEl = document.querySelector('a[href*="/Booking/Find"]');
+              const bookingLink = bookingLinkEl?.href || '';
+              
+              return { 
+                doctorName, 
+                clinicName, 
+                patientNumber, 
+                currentNumber, 
+                appointmentDate, 
+                bookingURL: bookingLink 
+              };
             });
+            
+            console.log('📊 البيانات المستخرجة:', bookingData);
             
             // 3. البحث عن زر الحجز والضغط عليه
             console.log('🔍 جاري البحث عن زر الحجز...');
-            const bookingButton = await page.$('a[href*="/Booking/Find"]');
+            
+            // محاولة إيجاد الزر بطرق مختلفة
+            let bookingButton = await page.$('a[href*="/Booking/Find"]');
+            
+            if (!bookingButton) {
+              // محاولة البحث عن الزر باستخدام النص
+              bookingButton = await page.$('a:has-text("قم بالحجز الأن")');
+            }
+            
+            if (!bookingButton) {
+              // محاولة البحث عن الزر باستخدام class
+              bookingButton = await page.$('.cta a, .btn-primary');
+            }
+            
             if (bookingButton) {
               console.log('🖱️ جاري الضغط على زر الحجز...');
               await bookingButton.click();
-              await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+              
+              // انتظار تحميل صفحة الحجز
+              await page.waitForNavigation({ 
+                waitUntil: 'networkidle2', 
+                timeout: 10000 
+              });
+              
               console.log('✅ تم الضغط على زر الحجز بنجاح');
+              
+              // استخراج تفاصيل إضافية من صفحة الحجز
+              const additionalDetails = await page.evaluate(() => {
+                const details = {};
+                document.querySelectorAll('.form-group, .col-md-6, .row').forEach(el => {
+                  const label = el.querySelector('label, .label, strong')?.textContent?.trim();
+                  const input = el.querySelector('input, .value, span');
+                  const value = input?.value || input?.textContent?.trim() || '';
+                  if (label && value) {
+                    details[label] = value;
+                  }
+                });
+                return details;
+              });
+              
+              console.log('📋 تفاصيل إضافية:', additionalDetails);
             } else {
               console.log('⚠️ لم يتم العثور على زر الحجز');
             }
@@ -170,18 +240,31 @@ jobs:
       run: |
         node booking.js
     
-    - name: Upload result
+    - name: Upload result as artifact
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: booking-result
         path: booking-result.json
+        retention-days: 7
     
     - name: Commit and push result
       if: success()
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-        git add booking-result.json booking-url.json
+        git add booking-result.json booking-url.json 2>/dev/null || true
         git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
         git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Send notification on success
+      if: success()
+      run: |
+        echo "✅ تم الحجز بنجاح! يمكنك فتح التطبيق لعرض التفاصيل."
+    
+    - name: Send notification on failure
+      if: failure()
+      run: |
+        echo "❌ فشل الحجز. يرجى التحقق من الرابط والمحاولة مرة أخرى."
