@@ -73,11 +73,11 @@ jobs:
       run: |
         pip install beautifulsoup4 lxml
     
-    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة باستخدام Python
-    - name: Extract doctor and clinic name
-      id: extract_doctor
+    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة والتاريخ باستخدام Python
+    - name: Extract doctor, clinic and date
+      id: extract_data
       run: |
-        echo "📋 استخراج اسم الدكتور والعيادة باستخدام Python..."
+        echo "📋 استخراج البيانات باستخدام Python..."
         
         python3 << 'PYTHON_SCRIPT'
         import json
@@ -108,12 +108,18 @@ jobs:
             match = re.search(r'عيادة[^<"\n]+', html_content)
             clinic_name = match.group(0) if match else "غير معروف"
         
-        # ⭐️ استخراج التاريخ والوقت
+        # ⭐️ استخراج التاريخ والوقت بشكل صحيح
+        # البحث عن التاريخ: 09-05-2026
         date_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', html_content)
+        # البحث عن الوقت: 11:00
         time_match = re.search(r'(\d{2}):(\d{2})', html_content)
         
         if date_match and time_match:
-            booking_date = f"{date_match.group(1)}/{date_match.group(2)}/{date_match.group(3)}"
+            # تحويل التاريخ من DD-MM-YYYY إلى DD/MM/YYYY
+            day = date_match.group(1)
+            month = date_match.group(2)
+            year = date_match.group(3)
+            booking_date = f"{day}/{month}/{year}"
             booking_time = f"{time_match.group(1)}:{time_match.group(2)}"
             appointment_date = f"{booking_date} {booking_time}"
         else:
@@ -232,21 +238,24 @@ jobs:
         fi
         [ -z "$CURRENT" ] && CURRENT="0"
         
-        # استخراج التاريخ من صفحة الحجز
-        BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
-        BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
-        
-        if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
-          DATE="$BOOKING_DATE $BOOKING_TIME"
-          DATE=$(echo "$DATE" | sed 's/-/\//g')
-        else
-          DATE=$(date '+%d/%m/%Y %H:%M:%S')
-        fi
-        
-        # ⭐️ قراءة البيانات المستخرجة من Python
+        # ⭐️ قراءة البيانات المستخرجة من Python (بما في ذلك التاريخ الصحيح)
         DOCTOR=$(cat extracted-data.json | jq -r '.doctorName')
         CLINIC=$(cat extracted-data.json | jq -r '.clinicName')
+        APPOINTMENT_DATE=$(cat extracted-data.json | jq -r '.appointmentDate')
         ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
+        
+        # إذا لم يتم استخراج التاريخ، استخدم التاريخ من صفحة الحجز
+        if [ -z "$APPOINTMENT_DATE" ] || [ "$APPOINTMENT_DATE" = "" ]; then
+          BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
+          BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
+          
+          if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
+            APPOINTMENT_DATE="$BOOKING_DATE $BOOKING_TIME"
+            APPOINTMENT_DATE=$(echo "$APPOINTMENT_DATE" | sed 's/-/\//g')
+          else
+            APPOINTMENT_DATE=$(date '+%d/%m/%Y %H:%M:%S')
+          fi
+        fi
         
         # تحديث نفس ملف booking-result.json (المرة الثانية)
         cat > booking-result.json << EOF
@@ -260,7 +269,7 @@ jobs:
             "patientNumber": "$PATIENT",
             "currentNumber": "$CURRENT",
             "status": "✅ تم الحجز بنجاح",
-            "appointmentDate": "$DATE",
+            "appointmentDate": "$APPOINTMENT_DATE",
             "bookingURL": "$ORIGINAL_URL"
           }
         }
@@ -271,7 +280,7 @@ jobs:
         echo "🏥 العيادة: $CLINIC"
         echo "🔢 رقمك: $PATIENT"
         echo "📊 الرقم الحالي: $CURRENT"
-        echo "📅 التاريخ: $DATE"
+        echo "📅 التاريخ: $APPOINTMENT_DATE"
     
     # ⭐️ الخطوة 10: رفع النتيجة
     - name: Upload result
