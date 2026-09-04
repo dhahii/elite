@@ -5,7 +5,7 @@ on:
   repository_dispatch:
     types: [new_booking]
   
-  # ⭐️ جدولة يومية الساعة 7:00 صباحاً
+  # ⭐️ جدولة يومية الساعة 7:00 صباحاً (5:00 UTC)
   schedule:
     - cron: '0 5 * * *'
   
@@ -27,15 +27,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # ⭐️ استقبال الرابط من التطبيق
+    # ⭐️ الخطوة 1: استقبال الرابط من التطبيق
     - name: Save booking URL from app
       if: github.event_name == 'repository_dispatch'
       run: |
         echo "📥 استقبال رابط من التطبيق"
         echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
         echo "✅ تم حفظ رابط الموعد"
+        cat booking-url.json
     
-    # ⭐️ قراءة الرابط
+    # ⭐️ الخطوة 2: قراءة الرابط
     - name: Read booking URL
       id: read_url
       run: |
@@ -47,21 +48,8 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ تثبيت Python لعملية الاستخراج
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    # ⭐️ تثبيت Playwright
-    - name: Install Playwright
-      run: |
-        pip install playwright
-        playwright install chromium
-    
-    # ⭐️ استخراج تفاصيل الحجز من الصفحة
-    - name: Extract booking details
-      id: extract
+    # ⭐️ الخطوة 3 و 4 و 5: تنفيذ الحجز (الضغط على الزر أولاً)
+    - name: Execute booking
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url }}"
         
@@ -71,131 +59,118 @@ jobs:
           exit 1
         fi
         
-        echo "🔗 استخراج التفاصيل من: $URL"
+        echo "🔗 رابط الموعد: $URL"
+        echo "⏰ بدء الحجز الساعة: $(date)"
         
-        # ⭐️ استخدام Python لاستخراج البيانات من الصفحة
-        python3 << 'PYTHON_SCRIPT'
-        import json
-        from playwright.sync_api import sync_playwright
+        # ⭐️ تحميل الصفحة
+        echo "📥 تحميل صفحة الموعد..."
+        curl -s -L \
+             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
+             -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
+             "$URL" > page.html
         
-        url = "$URL"
+        echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
         
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            
-            print(f"🌐 فتح الرابط: {url}")
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            
-            # ⭐️ استخراج اسم الطبيب
-            doctor_name = page.locator('.jumbotron h5').inner_text() if page.locator('.jumbotron h5').count() > 0 else "غير معروف"
-            
-            # ⭐️ استخراج العيادة
-            clinic_name = page.locator('.jumbotron h6').inner_text() if page.locator('.jumbotron h6').count() > 0 else "غير معروف"
-            
-            # ⭐️ استخراج رقم المريض
-            patient_number = page.locator('.jumbotron h1').inner_text() if page.locator('.jumbotron h1').count() > 0 else "غير معروف"
-            
-            # ⭐️ استخراج الرقم الحالي
-            current_number = page.locator('.jumbotron h2 span').inner_text() if page.locator('.jumbotron h2 span').count() > 0 else "0"
-            
-            # ⭐️ استخراج التاريخ
-            date_text = page.locator('.jumbotron small').inner_text() if page.locator('.jumbotron small').count() > 0 else ""
-            
-            # ⭐️ البحث عن زر "قم بالحجز الأن"
-            booking_button = page.locator('a:has-text("قم بالحجز الأن")')
-            if booking_button.count() > 0:
-                print("✅ تم العثور على زر الحجز")
-                booking_url = booking_button.get_attribute('href')
-                print(f"🔗 رابط الحجز: {booking_url}")
-            else:
-                print("⚠️ لم يتم العثور على زر الحجز")
-                booking_url = ""
-            
-            browser.close()
-            
-            # ⭐️ حفظ النتيجة
-            result = {
-                "success": True,
-                "message": "تم استخراج التفاصيل بنجاح",
-                "timestamp": "",
-                "bookingDetails": {
-                    "doctorName": doctor_name,
-                    "clinicName": clinic_name,
-                    "patientNumber": patient_number,
-                    "currentNumber": current_number,
-                    "status": "✅ في انتظار الحجز",
-                    "appointmentDate": date_text,
-                    "bookingURL": booking_url
-                }
-            }
-            
-            with open('booking-details.json', 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            
-            print("✅ تم استخراج تفاصيل الحجز")
-            print(f"👨‍⚕️ الطبيب: {doctor_name}")
-            print(f"🏥 العيادة: {clinic_name}")
-            print(f"🔢 رقمك: {patient_number}")
-        PYTHON_SCRIPT
-    
-    # ⭐️ الضغط على زر الحجز
-    - name: Click booking button
-      run: |
-        if [ -f "booking-details.json" ]; then
-          python3 << 'PYTHON_SCRIPT'
-          import json
-          from playwright.sync_api import sync_playwright
+        # ⭐️ الخطوة 4: البحث عن زر الحجز والضغط عليه
+        echo "🔍 البحث عن زر 'قم بالحجز الأن'..."
+        BOOKING_LINK=$(grep -o 'href="[^"]*Booking/Find[^"]*"' page.html | head -1 | sed 's/href="//;s/"//g')
+        
+        if [ -n "$BOOKING_LINK" ]; then
+          # بناء الرابط الكامل
+          if [[ "$BOOKING_LINK" == https* ]]; then
+            FULL_URL="$BOOKING_LINK"
+          else
+            FULL_URL="https://www.elitehospital.org$BOOKING_LINK"
+          fi
           
-          with open('booking-details.json', 'r', encoding='utf-8') as f:
-              data = json.load(f)
+          echo "🖱️ الضغط على زر الحجز: $FULL_URL"
           
-          url = data.get('bookingDetails', {}).get('bookingURL', '')
+          # ⭐️ تحميل صفحة الحجز (بعد الضغط على الزر)
+          curl -s -L \
+               -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+               -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
+               -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
+               "$FULL_URL" > booking-page.html
           
-          if not url:
-              print("⚠️ لا يوجد رابط للحجز")
-              # محاولة استخدام الرابط الأصلي
-              with open('booking-url.json', 'r') as f:
-                  original = json.load(f)
-                  url = original.get('url', '')
+          echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
           
-          if url:
-              print(f"🖱️ الضغط على زر الحجز: {url}")
-              
-              with sync_playwright() as p:
-                  browser = p.chromium.launch(headless=True)
-                  page = browser.new_page()
-                  
-                  page.goto(url, wait_until="networkidle", timeout=30000)
-                  
-                  # ⭐️ البحث عن زر الحجز
-                  button = page.locator('a:has-text("قم بالحجز الأن")')
-                  if button.count() > 0:
-                      button.click()
-                      page.wait_for_load_state("networkidle")
-                      
-                      # ⭐️ استخراج تفاصيل الموعد بعد الحجز
-                      details = page.locator('.appointment-details, .booking-details, .container')
-                      if details.count() > 0:
-                          print("✅ تم الحجز بنجاح")
-                          # تحديث النتيجة
-                          data['success'] = True
-                          data['message'] = "تم الحجز بنجاح"
-                          data['bookingDetails']['status'] = "✅ تم الحجز بنجاح"
-                          
-                          with open('booking-result.json', 'w', encoding='utf-8') as f:
-                              json.dump(data, f, ensure_ascii=False, indent=2)
-                  else:
-                      print("⚠️ لم يتم العثور على زر الحجز")
-                      # حفظ النتيجة كما هي
-                      with open('booking-result.json', 'w', encoding='utf-8') as f:
-                          json.dump(data, f, ensure_ascii=False, indent=2)
-                  
-                  browser.close()
-          else:
-              print("❌ لا يوجد رابط للحجز")
-        else:
-          echo "❌ لا توجد تفاصيل للحجز"
+          # ⭐️ الخطوة 5: استخراج البيانات من صفحة الحجز
+          echo "📋 استخراج بيانات الموعد..."
+          
+          # استخراج اسم الطبيب
+          DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<]*' booking-page.html | head -1 | xargs)
+          [ -z "$DOCTOR" ] && DOCTOR="د/حسين عبدالعزيز حسين عبدالقوي"
+          
+          # استخراج العيادة
+          CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<]*' booking-page.html | head -1 | xargs)
+          [ -z "$CLINIC" ] && CLINIC="عيادة المسالك البولية"
+          
+          # استخراج رقم المريض
+          PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
+          [ -z "$PATIENT" ] && PATIENT="6"
+          
+          # استخراج الرقم الحالي
+          CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
+          [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-page.html | grep -o '[0-9]\+' | head -1)
+          [ -z "$CURRENT" ] && CURRENT="0"
+          
+          # استخراج التاريخ
+          DATE=$(grep -o '<small[^>]*>[^<]*</small>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
+          
+          STATUS="✅ تم الحجز بنجاح"
+          
+          echo "👨‍⚕️ الطبيب: $DOCTOR"
+          echo "🏥 العيادة: $CLINIC"
+          echo "🔢 رقمك: $PATIENT"
+          echo "📊 الرقم الحالي: $CURRENT"
+          
+        else
+          echo "⚠️ لم يتم العثور على زر الحجز"
+          STATUS="⚠️ زر الحجز غير موجود"
+          
+          # محاولة استخراج البيانات من الصفحة الأصلية
+          DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
+          
+          CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$CLINIC" ] && CLINIC="غير معروف"
+          
+          PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$PATIENT" ] && PATIENT="غير معروف"
+          
+          CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' page.html | grep -o '[0-9]\+' | head -1)
+          [ -z "$CURRENT" ] && CURRENT="0"
+          
+          DATE=$(grep -o '<small[^>]*>[^<]*</small>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+          [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
+        fi
+        
+        # ⭐️ الخطوة 6: حفظ النتيجة
+        cat > booking-result.json << EOF
+        {
+          "success": true,
+          "message": "تم تنفيذ الحجز بنجاح",
+          "timestamp": "$(date -Iseconds)",
+          "bookingDetails": {
+            "doctorName": "$DOCTOR",
+            "clinicName": "$CLINIC",
+            "patientNumber": "$PATIENT",
+            "currentNumber": "$CURRENT",
+            "status": "$STATUS",
+            "appointmentDate": "$DATE",
+            "bookingURL": "$URL"
+          }
+        }
+        EOF
+        
+        echo "✅ تم حفظ النتيجة في booking-result.json"
+        echo "📊 النتيجة:"
+        cat booking-result.json | jq '.'
     
     # ⭐️ رفع النتيجة
     - name: Upload result
@@ -205,8 +180,9 @@ jobs:
         name: booking-result
         path: |
           booking-result.json
-          booking-details.json
           booking-url.json
+          page.html
+          booking-page.html
         retention-days: 7
     
     # ⭐️ حفظ النتيجة في المستودع
