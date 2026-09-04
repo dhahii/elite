@@ -69,52 +69,39 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y html-xml-utils
     
-    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة (فوراً)
+    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة باستخدام hxselect
     - name: Extract doctor and clinic name
       id: extract_doctor
       run: |
         echo "📋 استخراج اسم الدكتور والعيادة..."
         
-        # تنظيف الصفحة من الترميزات
+        # ⭐️ تنظيف الصفحة من الترميزات
         cat page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > page-clean.html
         
-        # استخراج اسم الدكتور - من <h5> مباشرة
-        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        
-        # إذا لم يتم العثور عليه، حاول البحث عن <h4>
-        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
-          DOCTOR=$(grep -o '<h4[^>]*>[^<]*</h4>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        fi
-        
+        # ⭐️ استخراج اسم الدكتور - من <h5> الأول
+        DOCTOR=$(hxselect -c 'h5' page-clean.html 2>/dev/null | head -1 | xargs)
         # إذا لم يتم العثور عليه، حاول البحث عن "د/"
         if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
           DOCTOR=$(grep -o 'د/[^<"]*' page-clean.html | head -1 | xargs)
         fi
-        
-        # إذا لم يتم العثور عليه، استخدم hxselect
-        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
-          DOCTOR=$(hxselect -c 'h5' page-clean.html 2>/dev/null | head -1 | xargs)
-        fi
-        
         [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
         
-        # استخراج اسم العيادة - من <h6> مباشرة
-        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page-clean.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        
-        # إذا لم يتم العثور عليه، حاول البحث عن <h5> الثاني
-        if [ -z "$CLINIC" ] || [ "$CLINIC" = "عيادة يوم" ] || [ "$CLINIC" = "" ]; then
-          CLINIC=$(grep -o '<h5[^>]*>[^<]*</h5>' page-clean.html | head -2 | tail -1 | sed 's/<[^>]*>//g' | xargs)
+        # ⭐️ استخراج اسم العيادة - من <h6>
+        CLINIC=$(hxselect -c 'h6' page-clean.html 2>/dev/null | head -1 | xargs)
+        # إذا لم يتم العثور عليه، حاول البحث عن النص بعد "عيادة"
+        if [ -z "$CLINIC" ] || [ "$CLINIC" = "" ]; then
+          CLINIC=$(grep -o 'عيادة[^<"]*' page-clean.html | head -1 | xargs)
         fi
-        
-        # إذا لم يتم العثور عليه، استخدم hxselect
-        if [ -z "$CLINIC" ] || [ "$CLINIC" = "عيادة يوم" ] || [ "$CLINIC" = "" ]; then
+        # تجاهل القيم الخاطئة
+        if [[ "$CLINIC" == *"سوف تبدأ"* ]] || [[ "$CLINIC" == *"يوم"* ]]; then
           CLINIC=$(hxselect -c 'h6' page-clean.html 2>/dev/null | head -1 | xargs)
         fi
-        
         [ -z "$CLINIC" ] && CLINIC="غير معروف"
         
-        # استخراج التاريخ والوقت من الصفحة
+        # ⭐️ استخراج التاريخ والوقت من الصفحة
+        # التاريخ: 09-05-2026
         BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' page-clean.html | head -1)
+        # الوقت: 11:00
         BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' page-clean.html | head -1)
         
         if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
@@ -124,13 +111,13 @@ jobs:
           DATE=$(date '+%d/%m/%Y %H:%M:%S')
         fi
         
-        # استخراج رقم الموعد من الرابط
+        # ⭐️ استخراج رقم الموعد من الرابط
         PATIENT_FROM_URL=$(echo "${{ steps.read_url.outputs.url }}" | grep -o '[0-9]\{7,8\}' | head -1)
         
-        # رابط الحجز الأصلي
+        # ⭐️ رابط الحجز الأصلي
         ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
-        # تحديث نفس ملف booking-result.json (المرة الأولى)
+        # ⭐️ تحديث نفس ملف booking-result.json (المرة الأولى)
         cat > booking-result.json << EOF
         {
           "success": true,
@@ -173,21 +160,17 @@ jobs:
           sleep 60
         done
     
-    # ⭐️ الخطوة 7: البحث عن زر "قم بالحجز الأن" (تم إصلاح الخطأ)
+    # ⭐️ الخطوة 7: البحث عن زر "قم بالحجز الأن"
     - name: Find booking button
       id: find_button
       run: |
         # البحث عن الرابط باستخدام عدة أنماط
-        
-        # الطريقة 1: بحث باستخدام " (علامات تنصيص مزدوجة)
         BOOKING_LINK=$(grep -oE 'href="([^"]*Booking/Find[^"]*)"' page.html | head -1 | sed 's/href="//;s/"//g')
         
-        # الطريقة 2: بحث باستخدام ' (علامات تنصيص مفردة) - تم إصلاحها
         if [ -z "$BOOKING_LINK" ]; then
           BOOKING_LINK=$(grep -o "href='[^']*Booking/Find[^']*'" page.html | head -1 | sed "s/href='//;s/'//g")
         fi
         
-        # الطريقة 3: بحث عام
         if [ -z "$BOOKING_LINK" ]; then
           BOOKING_LINK=$(grep -o 'href="[^"]*"' page.html | grep "Booking/Find" | head -1 | sed 's/href="//;s/"//g')
         fi
@@ -243,9 +226,6 @@ jobs:
         CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
         if [ -z "$CURRENT" ]; then
           CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-clean.html | grep -o '[0-9]\+' | head -1)
-        fi
-        if [ -z "$CURRENT" ]; then
-          CURRENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
         fi
         [ -z "$CURRENT" ] && CURRENT="0"
         
@@ -310,7 +290,7 @@ jobs:
       if: success()
       run: |
         git config user.name "GitHub Actions Bot"
-        git config user.email "actions@github.com"
+        git config.user.email "actions@github.com"
         git add booking-result.json booking-url.json 2>/dev/null || true
         git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
         git push
