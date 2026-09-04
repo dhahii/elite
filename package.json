@@ -1,0 +1,13 @@
+{
+  "name": "elite-booking-automation",
+  "version": "1.0.0",
+  "description": "نظام أتمتة حجز المواعيد في مستشفى إيليت",
+  "scripts": {
+    "start": "node booking.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "author": "dhahii",
+  "license": "MIT"
+}
