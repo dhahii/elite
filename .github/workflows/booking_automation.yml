@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       scheduled_time:
-        description: 'وقت التنفيذ'
+        description: 'وقت التنفيذ (تنسيق 24 ساعة، مثال: 07:00)'
         required: true
         default: '07:00'
         type: string
@@ -19,22 +19,22 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4  # تم التحديث إلى v4
     
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4  # تم التحديث إلى v4
       with:
         node-version: '18'
     
     - name: Install dependencies
       run: |
-        npm install puppeteer cheerio node-cron
+        npm install
+        npx playwright install
     
     - name: Create booking script
       run: |
         cat > booking.js << 'EOF'
-        const puppeteer = require('puppeteer');
-        const cron = require('node-cron');
+        const playwright = require('playwright');
         const fs = require('fs');
         
         const bookingURL = process.env.BOOKING_URL;
@@ -43,20 +43,39 @@ jobs:
         console.log(`📅 سيتم تنفيذ الحجز في الساعة ${scheduledTime}`);
         console.log(`🔗 رابط الموعد: ${bookingURL}`);
         
+        // دالة الانتظار حتى وقت محدد
+        function waitUntilTime(targetTime) {
+          return new Promise((resolve) => {
+            const now = new Date();
+            const target = new Date();
+            const [hours, minutes] = targetTime.split(':');
+            target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+            
+            if (target <= now) {
+              target.setDate(target.getDate() + 1);
+            }
+            
+            const diff = target - now;
+            console.log(`⏳ انتظار ${Math.floor(diff / 60000)} دقيقة حتى الساعة ${targetTime}`);
+            
+            setTimeout(resolve, diff);
+          });
+        }
+        
         async function performBooking() {
-          const browser = await puppeteer.launch({
-            headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          const browser = await playwright.chromium.launch({
+            headless: true,
+            args: ['--no-sandbox']
           });
           
           try {
             const page = await browser.newPage();
-            await page.setViewport({ width: 1280, height: 800 });
+            await page.setViewportSize({ width: 1280, height: 800 });
             
             // 1. فتح رابط الموعد
             console.log('🌐 جاري فتح الرابط...');
             await page.goto(bookingURL, { 
-              waitUntil: 'networkidle2',
+              waitUntil: 'networkidle',
               timeout: 30000 
             });
             
@@ -104,13 +123,13 @@ jobs:
             
             // 4. البحث عن زر الحجز والضغط عليه
             console.log('🔍 جاري البحث عن زر الحجز...');
-            const bookingButton = await page.$('a[href*="/Booking/Find"]');
-            if (bookingButton) {
+            const bookingButton = await page.locator('a[href*="/Booking/Find"]');
+            if (await bookingButton.count() > 0) {
               console.log('🖱️ جاري الضغط على زر الحجز...');
               await bookingButton.click();
               
               // انتظار تحميل صفحة الحجز
-              await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+              await page.waitForLoadState('networkidle', { timeout: 10000 });
               
               // استخراج تفاصيل إضافية
               const additionalDetails = await page.evaluate(() => {
@@ -164,25 +183,6 @@ jobs:
           }
         }
         
-        // دالة الانتظار حتى وقت محدد
-        function waitUntilTime(targetTime) {
-          return new Promise((resolve) => {
-            const now = new Date();
-            const target = new Date();
-            const [hours, minutes] = targetTime.split(':');
-            target.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-            
-            if (target <= now) {
-              target.setDate(target.getDate() + 1);
-            }
-            
-            const diff = target - now;
-            console.log(`⏳ انتظار ${Math.floor(diff / 60000)} دقيقة حتى الساعة ${targetTime}`);
-            
-            setTimeout(resolve, diff);
-          });
-        }
-        
         // التنفيذ الرئيسي
         async function main() {
           console.log('🔄 بدء عملية الحجز...');
@@ -205,13 +205,13 @@ jobs:
         node booking.js
     
     - name: Upload booking result as artifact
-      if: always()
-      uses: actions/upload-artifact@v3
+      if: always()  # سيتم التنفيذ حتى في حالة الفشل
+      uses: actions/upload-artifact@v4  # ✅ تم التحديث إلى v4
       with:
         name: booking-result
         path: booking-result.json
     
-    - name: Commit and push result
+    - name: Commit and push result (if successful)
       if: success()
       run: |
         git config user.name "GitHub Actions Bot"
