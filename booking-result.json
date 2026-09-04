@@ -1,14 +1,14 @@
 {
   "success": true,
   "message": "تم تنفيذ الحجز بنجاح",
-  "timestamp": "2026-09-04T20:36:40+00:00",
+  "timestamp": "2026-09-04T21:49:32+00:00",
   "bookingDetails": {
-    "doctorName": "غير معروف",
-    "clinicName": "غير معروف",
-    "patientNumber": "غير معروف",
+    "doctorName": "&#x644;&#x644;&#x627;&#x633;&#x62A;&#x641;&#x633;&#x627;&#x631;",
+    "clinicName": "10 &#x645;&#x631;&#x627;&#x643;&#x632; &#x637;&#x628;&#x64A;&#x629; &#x645;&#x62A;&#x62E;&#x635;&#x635;&#x629;",
+    "patientNumber": "6",
     "currentNumber": "0",
-    "status": "⚠️ زر الحجز غير موجود",
-    "appointmentDate": "04/09/2026 20:36:40",
-    "bookingURL": "https://www.google.com/?client=safari&channel=iphone_bm"
+    "status": "✅ تم الحجز بنجاح",
+    "appointmentDate": "04/09/2026 21:49:32",
+    "bookingURL": "https://www.elitehospital.org/Queue/1056503"
   }
 }
