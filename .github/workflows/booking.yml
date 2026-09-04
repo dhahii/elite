@@ -1,10 +1,11 @@
-# .github/workflows/booking.yml
 name: 🏥 حجز مستشفى إيليت
 
 on:
   schedule:
-    - cron: '0 5 * * *'          # 7 صباحاً مصر
-  workflow_dispatch:              # للتشغيل اليدوي
+    - cron: '0 5 * * *'
+  repository_dispatch:
+    types: [book_appointment]
+  workflow_dispatch:
 
 jobs:
   book:
@@ -27,23 +28,18 @@ jobs:
       - name: تشغيل الحجز
         run: python booking.py
         env:
-          BOOKING_URL: ${{ secrets.BOOKING_URL }}   # الرابط من التطبيق
+          BOOKING_URL: ${{ github.event.client_payload.booking_url }}
       
       - name: حفظ النتيجة
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # ✅ تم التحديث إلى v4
         with:
           name: booking-result
           path: booking_result.json
       
-      - name: نشر النتيجة
+      - name: تحديث الملف في المستودع
         run: |
-          mkdir -p docs/api
-          cp booking_result.json docs/api/status.json
-      
-      - name: رفع الصفحة
-        uses: actions/upload-pages-artifact@v2
-        with:
-          path: docs/
-      
-      - name: نشر
-        uses: actions/deploy-pages@v2
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add booking_result.json
+          git commit -m "Auto-update booking result [skip ci]" || echo "No changes"
+          git push
