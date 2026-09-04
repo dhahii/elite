@@ -31,14 +31,14 @@ jobs:
         echo "✅ تم حفظ رابط الموعد"
         cat booking-url.json
     
-    # ⭐️ الخطوة 2: قراءة الرابط
+    # ⭐️ الخطوة 2: قراءة الرابط من JSON
     - name: Read booking URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
           URL=$(cat booking-url.json | jq -r '.url')
           echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "✅ الرابط: $URL"
+          echo "✅ الرابط من JSON: $URL"
         else
           echo "url=" >> $GITHUB_OUTPUT
         fi
@@ -84,14 +84,13 @@ jobs:
           echo "link=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 5: الضغط على زر الحجز (أولاً)
+    # ⭐️ الخطوة 5: الضغط على زر الحجز
     - name: Click booking button
       if: steps.find_button.outputs.link != ''
       run: |
         FULL_URL="${{ steps.find_button.outputs.full_url }}"
         echo "🖱️ الضغط على زر الحجز: $FULL_URL"
         
-        # تحميل صفحة الحجز (محاكاة الضغط)
         curl -s -L \
           -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
           -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
@@ -101,52 +100,37 @@ jobs:
         
         echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
     
-    # ⭐️ الخطوة 6: استخراج البيانات من صفحة الحجز (ثانياً)
+    # ⭐️ الخطوة 6: استخراج البيانات من الصفحة الأصلية
     - name: Extract booking details
       run: |
-        # ⭐️ استخدام booking-page.html (بعد الضغط على الزر)
-        # إذا لم توجد صفحة الحجز، استخدم page.html
+        echo "📋 استخراج البيانات من الصفحة الأصلية..."
         
-        if [ -f "booking-page.html" ] && [ -s "booking-page.html" ]; then
-          TARGET_FILE="booking-page.html"
-          echo "📄 استخراج البيانات من صفحة الحجز (بعد الضغط على الزر)"
-        else
-          TARGET_FILE="page.html"
-          echo "📄 استخراج البيانات من الصفحة الأصلية"
-        fi
-        
-        echo "📋 استخراج البيانات المتغيرة..."
-        
-        # ⭐️ اسم الطبيب (متغير)
-        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
-        [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<"]*' "$TARGET_FILE" | head -1 | xargs)
-        [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'طبيب[^<"]*' "$TARGET_FILE" | head -1 | xargs)
+        # ⭐️ اسم الطبيب
+        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        DOCTOR=$(echo "$DOCTOR" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
         [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
         
-        # ⭐️ اسم العيادة (متغير)
-        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
-        [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<"]*' "$TARGET_FILE" | head -1 | xargs)
+        # ⭐️ اسم العيادة
+        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        CLINIC=$(echo "$CLINIC" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
         [ -z "$CLINIC" ] && CLINIC="غير معروف"
         
-        # ⭐️ رقم المريض (متغير)
-        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
-        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
-        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقم[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        # ⭐️ رقم المريض
+        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         [ -z "$PATIENT" ] && PATIENT="غير معروف"
         
-        # ⭐️ الرقم الحالي (متغير)
-        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
-        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        # ⭐️ الرقم الحالي
+        CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' page.html | grep -o '[0-9]\+' | head -1)
         [ -z "$CURRENT" ] && CURRENT="0"
         
-        # ⭐️ التاريخ (متغير)
-        DATE=$(grep -o '<small[^>]*>[^<]*</small>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
+        # ⭐️ التاريخ
+        DATE=$(grep -o '<small[^>]*>[^<]*</small>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
         
-        # ⭐️ رابط الحجز (ثابت)
-        BOOKING_URL="https://www.elitehospital.org/Booking/Find?culture=ar"
+        # ⭐️ رابط الحجز الأصلي من ملف JSON (أرسله التطبيق)
+        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
-        # ⭐️ حفظ النتيجة
+        # ⭐️ حفظ النتيجة مع الرابط الأصلي
         cat > booking-result.json << EOF
         {
           "success": true,
@@ -159,7 +143,7 @@ jobs:
             "currentNumber": "$CURRENT",
             "status": "✅ تم الحجز بنجاح",
             "appointmentDate": "$DATE",
-            "bookingURL": "$BOOKING_URL"
+            "bookingURL": "$ORIGINAL_URL"
           }
         }
         EOF
@@ -170,6 +154,7 @@ jobs:
         echo "🔢 رقمك: $PATIENT"
         echo "📊 الرقم الحالي: $CURRENT"
         echo "📅 التاريخ: $DATE"
+        echo "🔗 رابط الحجز (من التطبيق): $ORIGINAL_URL"
     
     # ⭐️ رفع النتيجة
     - name: Upload result
