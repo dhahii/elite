@@ -5,12 +5,17 @@ on:
   repository_dispatch:
     types: [new_booking]
   
-  # ⭐️ جدولة يومية الساعة 7 صباحاً
+  # ⭐️ جدولة يومية الساعة 7:00 صباحاً
   schedule:
     - cron: '0 5 * * *'
   
   # ⭐️ تشغيل يدوي
   workflow_dispatch:
+    inputs:
+      booking_url:
+        description: 'رابط الموعد (للتجربة)'
+        required: false
+        type: string
 
 jobs:
   process_booking:
@@ -26,55 +31,183 @@ jobs:
     - name: Save booking URL from app
       if: github.event_name == 'repository_dispatch'
       run: |
+        echo "📥 استقبال رابط من التطبيق"
         echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
-        echo "✅ تم حفظ رابط الموعد من التطبيق"
-        cat booking-url.json
+        echo "✅ تم حفظ رابط الموعد"
     
-    # ⭐️ قراءة الرابط (من التطبيق أو من الملف)
+    # ⭐️ قراءة الرابط
     - name: Read booking URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
           URL=$(cat booking-url.json | jq -r '.url')
           echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "✅ تم قراءة الرابط: $URL"
+          echo "✅ الرابط: $URL"
         else
-          echo "⚠️ ملف booking-url.json غير موجود"
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ تنفيذ الحجز (محاكاة)
-    - name: Execute booking
+    # ⭐️ تثبيت Python لعملية الاستخراج
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    # ⭐️ تثبيت Playwright
+    - name: Install Playwright
       run: |
-        URL="${{ steps.read_url.outputs.url }}"
+        pip install playwright
+        playwright install chromium
+    
+    # ⭐️ استخراج تفاصيل الحجز من الصفحة
+    - name: Extract booking details
+      id: extract
+      run: |
+        URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url }}"
         
         if [ -z "$URL" ]; then
-          echo "❌ لا يوجد رابط للحجز"
-          echo '{"success":false,"message":"لا يوجد رابط للحجز","timestamp":"'$(date -Iseconds)'","bookingDetails":null}' > booking-result.json
+          echo "❌ لا يوجد رابط"
+          echo '{"success":false,"message":"لا يوجد رابط","timestamp":"'$(date -Iseconds)'","bookingDetails":null}' > booking-result.json
           exit 1
         fi
         
-        echo "🔗 رابط الموعد: $URL"
-        echo "⏰ بدء الحجز الساعة: $(date)"
+        echo "🔗 استخراج التفاصيل من: $URL"
         
-        # محاكاة الحجز
-        cat > booking-result.json << EOF
-        {
-          "success": true,
-          "message": "تم الحجز بنجاح",
-          "timestamp": "$(date -Iseconds)",
-          "bookingDetails": {
-            "doctorName": "د/حسين عبدالعزيز حسين عبدالقوي",
-            "clinicName": "عيادة المسالك البولية",
-            "patientNumber": "6",
-            "currentNumber": "0",
-            "status": "✅ تم الحجز بنجاح",
-            "appointmentDate": "$(date)",
-            "bookingURL": "$URL"
-          }
-        }
-        EOF
-        echo "✅ تم حفظ النتيجة"
+        # ⭐️ استخدام Python لاستخراج البيانات من الصفحة
+        python3 << 'PYTHON_SCRIPT'
+        import json
+        from playwright.sync_api import sync_playwright
+        
+        url = "$URL"
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            print(f"🌐 فتح الرابط: {url}")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # ⭐️ استخراج اسم الطبيب
+            doctor_name = page.locator('.jumbotron h5').inner_text() if page.locator('.jumbotron h5').count() > 0 else "غير معروف"
+            
+            # ⭐️ استخراج العيادة
+            clinic_name = page.locator('.jumbotron h6').inner_text() if page.locator('.jumbotron h6').count() > 0 else "غير معروف"
+            
+            # ⭐️ استخراج رقم المريض
+            patient_number = page.locator('.jumbotron h1').inner_text() if page.locator('.jumbotron h1').count() > 0 else "غير معروف"
+            
+            # ⭐️ استخراج الرقم الحالي
+            current_number = page.locator('.jumbotron h2 span').inner_text() if page.locator('.jumbotron h2 span').count() > 0 else "0"
+            
+            # ⭐️ استخراج التاريخ
+            date_text = page.locator('.jumbotron small').inner_text() if page.locator('.jumbotron small').count() > 0 else ""
+            
+            # ⭐️ البحث عن زر "قم بالحجز الأن"
+            booking_button = page.locator('a:has-text("قم بالحجز الأن")')
+            if booking_button.count() > 0:
+                print("✅ تم العثور على زر الحجز")
+                booking_url = booking_button.get_attribute('href')
+                print(f"🔗 رابط الحجز: {booking_url}")
+            else:
+                print("⚠️ لم يتم العثور على زر الحجز")
+                booking_url = ""
+            
+            browser.close()
+            
+            # ⭐️ حفظ النتيجة
+            result = {
+                "success": True,
+                "message": "تم استخراج التفاصيل بنجاح",
+                "timestamp": "",
+                "bookingDetails": {
+                    "doctorName": doctor_name,
+                    "clinicName": clinic_name,
+                    "patientNumber": patient_number,
+                    "currentNumber": current_number,
+                    "status": "✅ في انتظار الحجز",
+                    "appointmentDate": date_text,
+                    "bookingURL": booking_url
+                }
+            }
+            
+            with open('booking-details.json', 'w', encoding='utf-8') as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            
+            print("✅ تم استخراج تفاصيل الحجز")
+            print(f"👨‍⚕️ الطبيب: {doctor_name}")
+            print(f"🏥 العيادة: {clinic_name}")
+            print(f"🔢 رقمك: {patient_number}")
+        PYTHON_SCRIPT
+    
+    # ⭐️ الضغط على زر الحجز
+    - name: Click booking button
+      run: |
+        if [ -f "booking-details.json" ]; then
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from playwright.sync_api import sync_playwright
+          
+          with open('booking-details.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+          
+          url = data.get('bookingDetails', {}).get('bookingURL', '')
+          
+          if not url:
+              print("⚠️ لا يوجد رابط للحجز")
+              # محاولة استخدام الرابط الأصلي
+              with open('booking-url.json', 'r') as f:
+                  original = json.load(f)
+                  url = original.get('url', '')
+          
+          if url:
+              print(f"🖱️ الضغط على زر الحجز: {url}")
+              
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(headless=True)
+                  page = browser.new_page()
+                  
+                  page.goto(url, wait_until="networkidle", timeout=30000)
+                  
+                  # ⭐️ البحث عن زر الحجز
+                  button = page.locator('a:has-text("قم بالحجز الأن")')
+                  if button.count() > 0:
+                      button.click()
+                      page.wait_for_load_state("networkidle")
+                      
+                      # ⭐️ استخراج تفاصيل الموعد بعد الحجز
+                      details = page.locator('.appointment-details, .booking-details, .container')
+                      if details.count() > 0:
+                          print("✅ تم الحجز بنجاح")
+                          # تحديث النتيجة
+                          data['success'] = True
+                          data['message'] = "تم الحجز بنجاح"
+                          data['bookingDetails']['status'] = "✅ تم الحجز بنجاح"
+                          
+                          with open('booking-result.json', 'w', encoding='utf-8') as f:
+                              json.dump(data, f, ensure_ascii=False, indent=2)
+                  else:
+                      print("⚠️ لم يتم العثور على زر الحجز")
+                      # حفظ النتيجة كما هي
+                      with open('booking-result.json', 'w', encoding='utf-8') as f:
+                          json.dump(data, f, ensure_ascii=False, indent=2)
+                  
+                  browser.close()
+          else:
+              print("❌ لا يوجد رابط للحجز")
+        else:
+          echo "❌ لا توجد تفاصيل للحجز"
+    
+    # ⭐️ رفع النتيجة
+    - name: Upload result
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: booking-result
+        path: |
+          booking-result.json
+          booking-details.json
+          booking-url.json
+        retention-days: 7
     
     # ⭐️ حفظ النتيجة في المستودع
     - name: Commit and push result
