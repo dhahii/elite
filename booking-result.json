@@ -1,6 +1,14 @@
 {
-  "success": false,
-  "message": "لم يتم تنفيذ أي حجز بعد",
-  "timestamp": "",
-  "bookingDetails": null
+  "success": true,
+  "message": "تم الحجز بنجاح",
+  "timestamp": "2026-09-04T20:18:08+00:00",
+  "bookingDetails": {
+    "doctorName": "د/حسين عبدالعزيز حسين عبدالقوي",
+    "clinicName": "عيادة المسالك البولية",
+    "patientNumber": "6",
+    "currentNumber": "0",
+    "status": "✅ تم الحجز بنجاح",
+    "appointmentDate": "Fri Sep  4 20:18:08 UTC 2026",
+    "bookingURL": "https://www.elitehospital.org/Booking/Find?doctor=hussein"
+  }
 }
