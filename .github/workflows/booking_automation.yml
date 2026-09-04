@@ -43,7 +43,7 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 3: تحميل صفحة الموعد
+    # ⭐️ الخطوة 3: تحميل صفحة الموعد (فوراً)
     - name: Load booking page
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url }}"
@@ -63,7 +63,58 @@ jobs:
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
     
-    # ⭐️ الخطوة 4: البحث عن زر "قم بالحجز الأن"
+    # ⭐️ الخطوة 4: استخراج اسم الدكتور والعيادة (فوراً)
+    - name: Extract doctor and clinic name
+      id: extract_doctor
+      run: |
+        echo "📋 استخراج اسم الدكتور والعيادة..."
+        
+        # ⭐️ اسم الطبيب
+        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        DOCTOR=$(echo "$DOCTOR" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
+        [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
+        
+        # ⭐️ اسم العيادة
+        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        CLINIC=$(echo "$CLINIC" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
+        [ -z "$CLINIC" ] && CLINIC="غير معروف"
+        
+        # ⭐️ حفظ البيانات في ملف مؤقت
+        echo "doctor=$DOCTOR" >> $GITHUB_OUTPUT
+        echo "clinic=$CLINIC" >> $GITHUB_OUTPUT
+        
+        # ⭐️ حفظ في ملف للاستخدام لاحقاً
+        cat > doctor-info.json << EOF
+        {
+          "doctorName": "$DOCTOR",
+          "clinicName": "$CLINIC"
+        }
+        EOF
+        
+        echo "✅ اسم الدكتور: $DOCTOR"
+        echo "✅ العيادة: $CLINIC"
+        echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
+    
+    # ⭐️ الخطوة 5: الانتظار حتى الساعة 7:00 صباحاً
+    - name: Wait until 7:00 AM
+      run: |
+        echo "⏳ بدء الانتظار حتى الساعة 7:00 صباحاً..."
+        
+        # حساب الوقت المتبقي حتى 7:00
+        while true; do
+          CURRENT_HOUR=$(date +%H)
+          CURRENT_MIN=$(date +%M)
+          
+          if [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_MIN" -ge 0 ]; then
+            echo "✅ الساعة الآن 7:00 صباحاً - بدء التنفيذ!"
+            break
+          fi
+          
+          echo "⏳ الوقت الآن: $(date +%H:%M) - الانتظار..."
+          sleep 60
+        done
+    
+    # ⭐️ الخطوة 6: البحث عن زر "قم بالحجز الأن"
     - name: Find booking button
       id: find_button
       run: |
@@ -84,12 +135,13 @@ jobs:
           echo "link=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 5: الضغط على زر الحجز
+    # ⭐️ الخطوة 7: الضغط على زر الحجز (الساعة 7:00)
     - name: Click booking button
       if: steps.find_button.outputs.link != ''
       run: |
         FULL_URL="${{ steps.find_button.outputs.full_url }}"
         echo "🖱️ الضغط على زر الحجز: $FULL_URL"
+        echo "⏰ الوقت: $(date)"
         
         curl -s -L \
           -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
@@ -100,37 +152,33 @@ jobs:
         
         echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
     
-    # ⭐️ الخطوة 6: استخراج البيانات من الصفحة الأصلية
-    - name: Extract booking details
+    # ⭐️ الخطوة 8: استخراج رقم الدور من صفحة الحجز
+    - name: Extract queue number
       run: |
-        echo "📋 استخراج البيانات من الصفحة الأصلية..."
+        echo "📋 استخراج رقم الدور..."
         
-        # ⭐️ اسم الطبيب
-        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        DOCTOR=$(echo "$DOCTOR" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
-        [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
-        
-        # ⭐️ اسم العيادة
-        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-        CLINIC=$(echo "$CLINIC" | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g')
-        [ -z "$CLINIC" ] && CLINIC="غير معروف"
-        
-        # ⭐️ رقم المريض
-        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        # ⭐️ استخراج رقم المريض من صفحة الحجز
+        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
         [ -z "$PATIENT" ] && PATIENT="غير معروف"
         
-        # ⭐️ الرقم الحالي
-        CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' page.html | grep -o '[0-9]\+' | head -1)
+        # ⭐️ استخراج الرقم الحالي
+        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
+        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-page.html | grep -o '[0-9]\+' | head -1)
         [ -z "$CURRENT" ] && CURRENT="0"
         
-        # ⭐️ التاريخ
-        DATE=$(grep -o '<small[^>]*>[^<]*</small>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
+        # ⭐️ استخراج التاريخ
+        DATE=$(grep -o '<small[^>]*>[^<]*</small>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
         [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
         
-        # ⭐️ رابط الحجز الأصلي من ملف JSON (أرسله التطبيق)
+        # ⭐️ قراءة اسم الدكتور والعيادة من الملف المؤقت
+        DOCTOR=$(cat doctor-info.json | jq -r '.doctorName')
+        CLINIC=$(cat doctor-info.json | jq -r '.clinicName')
+        
+        # ⭐️ رابط الحجز الأصلي من ملف JSON
         ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
-        # ⭐️ حفظ النتيجة مع الرابط الأصلي
+        # ⭐️ حفظ النتيجة النهائية
         cat > booking-result.json << EOF
         {
           "success": true,
@@ -148,13 +196,12 @@ jobs:
         }
         EOF
         
-        echo "✅ تم حفظ النتيجة"
+        echo "✅ تم حفظ النتيجة النهائية"
         echo "👨‍⚕️ الطبيب: $DOCTOR"
         echo "🏥 العيادة: $CLINIC"
         echo "🔢 رقمك: $PATIENT"
         echo "📊 الرقم الحالي: $CURRENT"
         echo "📅 التاريخ: $DATE"
-        echo "🔗 رابط الحجز (من التطبيق): $ORIGINAL_URL"
     
     # ⭐️ رفع النتيجة
     - name: Upload result
@@ -165,6 +212,7 @@ jobs:
         path: |
           booking-result.json
           booking-url.json
+          doctor-info.json
           page.html
           booking-page.html
         retention-days: 7
@@ -175,6 +223,6 @@ jobs:
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-        git add booking-result.json booking-url.json 2>/dev/null || true
+        git add booking-result.json booking-url.json doctor-info.json 2>/dev/null || true
         git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
         git push
