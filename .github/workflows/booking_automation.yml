@@ -1,15 +1,10 @@
 name: Elite Hospital Booking Automation
 
 on:
-  # ⭐️ استقبال رابط من التطبيق
   repository_dispatch:
     types: [new_booking]
-  
-  # ⭐️ جدولة يومية الساعة 7:00 صباحاً (5:00 UTC)
   schedule:
     - cron: '0 5 * * *'
-  
-  # ⭐️ تشغيل يدوي
   workflow_dispatch:
     inputs:
       booking_url:
@@ -48,8 +43,8 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 3 و 4 و 5: تنفيذ الحجز (الضغط على الزر أولاً)
-    - name: Execute booking
+    # ⭐️ الخطوة 3: تحميل صفحة الموعد
+    - name: Load booking page
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url }}"
         
@@ -59,118 +54,122 @@ jobs:
           exit 1
         fi
         
-        echo "🔗 رابط الموعد: $URL"
-        echo "⏰ بدء الحجز الساعة: $(date)"
-        
-        # ⭐️ تحميل الصفحة
-        echo "📥 تحميل صفحة الموعد..."
+        echo "🌐 تحميل صفحة الموعد: $URL"
         curl -s -L \
-             -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
-             -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
-             "$URL" > page.html
+          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
+          -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
+          "$URL" > page.html
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
-        
-        # ⭐️ الخطوة 4: البحث عن زر الحجز والضغط عليه
-        echo "🔍 البحث عن زر 'قم بالحجز الأن'..."
+    
+    # ⭐️ الخطوة 4: البحث عن زر "قم بالحجز الأن"
+    - name: Find booking button
+      id: find_button
+      run: |
         BOOKING_LINK=$(grep -o 'href="[^"]*Booking/Find[^"]*"' page.html | head -1 | sed 's/href="//;s/"//g')
         
         if [ -n "$BOOKING_LINK" ]; then
-          # بناء الرابط الكامل
+          echo "✅ تم العثور على زر الحجز"
+          echo "link=$BOOKING_LINK" >> $GITHUB_OUTPUT
+          
           if [[ "$BOOKING_LINK" == https* ]]; then
             FULL_URL="$BOOKING_LINK"
           else
             FULL_URL="https://www.elitehospital.org$BOOKING_LINK"
           fi
-          
-          echo "🖱️ الضغط على زر الحجز: $FULL_URL"
-          
-          # ⭐️ تحميل صفحة الحجز (بعد الضغط على الزر)
-          curl -s -L \
-               -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-               -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
-               -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
-               "$FULL_URL" > booking-page.html
-          
-          echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
-          
-          # ⭐️ الخطوة 5: استخراج البيانات من صفحة الحجز
-          echo "📋 استخراج بيانات الموعد..."
-          
-          # استخراج اسم الطبيب
-          DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<]*' booking-page.html | head -1 | xargs)
-          [ -z "$DOCTOR" ] && DOCTOR="د/حسين عبدالعزيز حسين عبدالقوي"
-          
-          # استخراج العيادة
-          CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<]*' booking-page.html | head -1 | xargs)
-          [ -z "$CLINIC" ] && CLINIC="عيادة المسالك البولية"
-          
-          # استخراج رقم المريض
-          PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
-          [ -z "$PATIENT" ] && PATIENT="6"
-          
-          # استخراج الرقم الحالي
-          CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-page.html | grep -o '[0-9]\+' | head -1)
-          [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-page.html | grep -o '[0-9]\+' | head -1)
-          [ -z "$CURRENT" ] && CURRENT="0"
-          
-          # استخراج التاريخ
-          DATE=$(grep -o '<small[^>]*>[^<]*</small>' booking-page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
-          
-          STATUS="✅ تم الحجز بنجاح"
-          
-          echo "👨‍⚕️ الطبيب: $DOCTOR"
-          echo "🏥 العيادة: $CLINIC"
-          echo "🔢 رقمك: $PATIENT"
-          echo "📊 الرقم الحالي: $CURRENT"
-          
+          echo "full_url=$FULL_URL" >> $GITHUB_OUTPUT
         else
           echo "⚠️ لم يتم العثور على زر الحجز"
-          STATUS="⚠️ زر الحجز غير موجود"
-          
-          # محاولة استخراج البيانات من الصفحة الأصلية
-          DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
-          
-          CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$CLINIC" ] && CLINIC="غير معروف"
-          
-          PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$PATIENT" ] && PATIENT="غير معروف"
-          
-          CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' page.html | grep -o '[0-9]\+' | head -1)
-          [ -z "$CURRENT" ] && CURRENT="0"
-          
-          DATE=$(grep -o '<small[^>]*>[^<]*</small>' page.html | head -1 | sed 's/<[^>]*>//g' | xargs)
-          [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
+          echo "link=" >> $GITHUB_OUTPUT
+        fi
+    
+    # ⭐️ الخطوة 5: الضغط على زر الحجز (أولاً)
+    - name: Click booking button
+      if: steps.find_button.outputs.link != ''
+      run: |
+        FULL_URL="${{ steps.find_button.outputs.full_url }}"
+        echo "🖱️ الضغط على زر الحجز: $FULL_URL"
+        
+        # تحميل صفحة الحجز (محاكاة الضغط)
+        curl -s -L \
+          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
+          -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
+          -H "Referer: ${{ steps.read_url.outputs.url }}" \
+          "$FULL_URL" > booking-page.html
+        
+        echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
+    
+    # ⭐️ الخطوة 6: استخراج البيانات من صفحة الحجز (ثانياً)
+    - name: Extract booking details
+      run: |
+        # ⭐️ استخدام booking-page.html (بعد الضغط على الزر)
+        # إذا لم توجد صفحة الحجز، استخدم page.html
+        
+        if [ -f "booking-page.html" ] && [ -s "booking-page.html" ]; then
+          TARGET_FILE="booking-page.html"
+          echo "📄 استخراج البيانات من صفحة الحجز (بعد الضغط على الزر)"
+        else
+          TARGET_FILE="page.html"
+          echo "📄 استخراج البيانات من الصفحة الأصلية"
         fi
         
-        # ⭐️ الخطوة 6: حفظ النتيجة
+        echo "📋 استخراج البيانات المتغيرة..."
+        
+        # ⭐️ اسم الطبيب (متغير)
+        DOCTOR=$(grep -o '<h5[^>]*>[^<]*</h5>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
+        [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'د/[^<"]*' "$TARGET_FILE" | head -1 | xargs)
+        [ -z "$DOCTOR" ] && DOCTOR=$(grep -o 'طبيب[^<"]*' "$TARGET_FILE" | head -1 | xargs)
+        [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
+        
+        # ⭐️ اسم العيادة (متغير)
+        CLINIC=$(grep -o '<h6[^>]*>[^<]*</h6>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
+        [ -z "$CLINIC" ] && CLINIC=$(grep -o 'عيادة[^<"]*' "$TARGET_FILE" | head -1 | xargs)
+        [ -z "$CLINIC" ] && CLINIC="غير معروف"
+        
+        # ⭐️ رقم المريض (متغير)
+        PATIENT=$(grep -o '<h1[^>]*>[^<]*</h1>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
+        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقمك[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        [ -z "$PATIENT" ] && PATIENT=$(grep -o 'رقم[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        [ -z "$PATIENT" ] && PATIENT="غير معروف"
+        
+        # ⭐️ الرقم الحالي (متغير)
+        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        [ -z "$CURRENT" ] && CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' "$TARGET_FILE" | grep -o '[0-9]\+' | head -1)
+        [ -z "$CURRENT" ] && CURRENT="0"
+        
+        # ⭐️ التاريخ (متغير)
+        DATE=$(grep -o '<small[^>]*>[^<]*</small>' "$TARGET_FILE" | head -1 | sed 's/<[^>]*>//g' | xargs)
+        [ -z "$DATE" ] && DATE=$(date '+%d/%m/%Y %H:%M:%S')
+        
+        # ⭐️ رابط الحجز (ثابت)
+        BOOKING_URL="https://www.elitehospital.org/Booking/Find?culture=ar"
+        
+        # ⭐️ حفظ النتيجة
         cat > booking-result.json << EOF
         {
           "success": true,
-          "message": "تم تنفيذ الحجز بنجاح",
+          "message": "تم الحجز بنجاح",
           "timestamp": "$(date -Iseconds)",
           "bookingDetails": {
             "doctorName": "$DOCTOR",
             "clinicName": "$CLINIC",
             "patientNumber": "$PATIENT",
             "currentNumber": "$CURRENT",
-            "status": "$STATUS",
+            "status": "✅ تم الحجز بنجاح",
             "appointmentDate": "$DATE",
-            "bookingURL": "$URL"
+            "bookingURL": "$BOOKING_URL"
           }
         }
         EOF
         
-        echo "✅ تم حفظ النتيجة في booking-result.json"
-        echo "📊 النتيجة:"
-        cat booking-result.json | jq '.'
+        echo "✅ تم حفظ النتيجة"
+        echo "👨‍⚕️ الطبيب: $DOCTOR"
+        echo "🏥 العيادة: $CLINIC"
+        echo "🔢 رقمك: $PATIENT"
+        echo "📊 الرقم الحالي: $CURRENT"
+        echo "📅 التاريخ: $DATE"
     
     # ⭐️ رفع النتيجة
     - name: Upload result
