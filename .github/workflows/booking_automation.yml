@@ -63,78 +63,86 @@ jobs:
         
         echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
     
-    # ⭐️ الخطوة 4: تثبيت أدوات معالجة HTML
-    - name: Install HTML tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y html-xml-utils
+    # ⭐️ الخطوة 4: تثبيت Python و BeautifulSoup
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
     
-    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة باستخدام hxselect
+    - name: Install Python dependencies
+      run: |
+        pip install beautifulsoup4 lxml
+    
+    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة باستخدام Python
     - name: Extract doctor and clinic name
       id: extract_doctor
       run: |
-        echo "📋 استخراج اسم الدكتور والعيادة..."
+        echo "📋 استخراج اسم الدكتور والعيادة باستخدام Python..."
         
-        # تنظيف الصفحة من الترميزات
-        cat page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > page-clean.html
+        python3 << 'PYTHON_SCRIPT'
+        import json
+        import re
+        from bs4 import BeautifulSoup
         
-        # استخراج اسم الدكتور - من <h5> الأول
-        DOCTOR=$(hxselect -c 'h5' page-clean.html 2>/dev/null | head -1 | xargs)
-        if [ -z "$DOCTOR" ] || [ "$DOCTOR" = "/" ] || [ "$DOCTOR" = "" ]; then
-          DOCTOR=$(grep -o 'د/[^<"]*' page-clean.html | head -1 | xargs)
-        fi
-        [ -z "$DOCTOR" ] && DOCTOR="غير معروف"
+        # قراءة الصفحة
+        with open('page.html', 'r', encoding='utf-8') as f:
+            html_content = f.read()
         
-        # استخراج اسم العيادة - من <h6>
-        CLINIC=$(hxselect -c 'h6' page-clean.html 2>/dev/null | head -1 | xargs)
-        if [ -z "$CLINIC" ] || [ "$CLINIC" = "" ]; then
-          CLINIC=$(grep -o 'عيادة[^<"]*' page-clean.html | head -1 | xargs)
-        fi
-        if [[ "$CLINIC" == *"سوف تبدأ"* ]] || [[ "$CLINIC" == *"يوم"* ]]; then
-          CLINIC=$(hxselect -c 'h6' page-clean.html 2>/dev/null | head -1 | xargs)
-        fi
-        [ -z "$CLINIC" ] && CLINIC="غير معروف"
+        soup = BeautifulSoup(html_content, 'html.parser')
         
-        # استخراج التاريخ والوقت من الصفحة
-        BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' page-clean.html | head -1)
-        BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' page-clean.html | head -1)
+        # ⭐️ استخراج اسم الدكتور - من <h5> الأول
+        doctor_tag = soup.find('h5')
+        doctor_name = doctor_tag.get_text(strip=True) if doctor_tag else ""
         
-        if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
-          DATE="$BOOKING_DATE $BOOKING_TIME"
-          DATE=$(echo "$DATE" | sed 's/-/\//g')
-        else
-          DATE=$(date '+%d/%m/%Y %H:%M:%S')
-        fi
+        # إذا لم يتم العثور عليه، حاول البحث عن "د/"
+        if not doctor_name or doctor_name == "/":
+            match = re.search(r'د/[^<"\s]+(?:\s[^<"\s]+)*', html_content)
+            doctor_name = match.group(0) if match else "غير معروف"
         
-        # استخراج رقم الموعد من الرابط
-        PATIENT_FROM_URL=$(echo "${{ steps.read_url.outputs.url }}" | grep -o '[0-9]\{7,8\}' | head -1)
+        # ⭐️ استخراج اسم العيادة - من <h6> الأول
+        clinic_tag = soup.find('h6')
+        clinic_name = clinic_tag.get_text(strip=True) if clinic_tag else ""
         
-        # رابط الحجز الأصلي
-        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
+        # إذا لم يتم العثور عليه، حاول البحث عن "عيادة"
+        if not clinic_name or clinic_name == "":
+            match = re.search(r'عيادة[^<"\n]+', html_content)
+            clinic_name = match.group(0) if match else "غير معروف"
         
-        # تحديث نفس ملف booking-result.json (المرة الأولى)
-        cat > booking-result.json << EOF
-        {
-          "success": true,
-          "message": "تم استخراج بيانات الطبيب",
-          "timestamp": "$(date -Iseconds)",
-          "bookingDetails": {
-            "doctorName": "$DOCTOR",
-            "clinicName": "$CLINIC",
-            "patientNumber": "$PATIENT_FROM_URL",
-            "currentNumber": "جاري الحجز...",
-            "status": "⏳ في انتظار الحجز الساعة 7:00",
-            "appointmentDate": "$DATE",
-            "bookingURL": "$ORIGINAL_URL"
-          }
+        # ⭐️ استخراج التاريخ والوقت
+        date_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', html_content)
+        time_match = re.search(r'(\d{2}):(\d{2})', html_content)
+        
+        if date_match and time_match:
+            booking_date = f"{date_match.group(1)}/{date_match.group(2)}/{date_match.group(3)}"
+            booking_time = f"{time_match.group(1)}:{time_match.group(2)}"
+            appointment_date = f"{booking_date} {booking_time}"
+        else:
+            appointment_date = ""
+        
+        # ⭐️ استخراج رقم الموعد من الرابط
+        url = "${{ steps.read_url.outputs.url }}"
+        patient_match = re.search(r'(\d{7,8})', url)
+        patient_number = patient_match.group(1) if patient_match else "غير معروف"
+        
+        # ⭐️ حفظ البيانات في ملف مؤقت
+        result = {
+            "doctorName": doctor_name if doctor_name else "غير معروف",
+            "clinicName": clinic_name if clinic_name else "غير معروف",
+            "patientNumber": patient_number,
+            "appointmentDate": appointment_date if appointment_date else "",
+            "bookingURL": url
         }
-        EOF
         
-        echo "✅ تم تحديث booking-result.json ببيانات الطبيب"
-        echo "👨‍⚕️ الطبيب: $DOCTOR"
-        echo "🏥 العيادة: $CLINIC"
-        echo "📅 التاريخ: $DATE"
-        echo "🔢 رقم الموعد: $PATIENT_FROM_URL"
+        with open('extracted-data.json', 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ تم استخراج البيانات:")
+        print(f"👨‍⚕️ الطبيب: {result['doctorName']}")
+        print(f"🏥 العيادة: {result['clinicName']}")
+        print(f"🔢 رقم الموعد: {result['patientNumber']}")
+        print(f"📅 التاريخ: {result['appointmentDate']}")
+        PYTHON_SCRIPT
+        
         echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
     
     # ⭐️ الخطوة 6: الانتظار حتى الساعة 7:00 صباحاً
@@ -235,10 +243,10 @@ jobs:
           DATE=$(date '+%d/%m/%Y %H:%M:%S')
         fi
         
-        # قراءة اسم الدكتور والعيادة من الملف الحالي
-        DOCTOR=$(cat booking-result.json | jq -r '.bookingDetails.doctorName')
-        CLINIC=$(cat booking-result.json | jq -r '.bookingDetails.clinicName')
-        ORIGINAL_URL=$(cat booking-result.json | jq -r '.bookingDetails.bookingURL')
+        # ⭐️ قراءة البيانات المستخرجة من Python
+        DOCTOR=$(cat extracted-data.json | jq -r '.doctorName')
+        CLINIC=$(cat extracted-data.json | jq -r '.clinicName')
+        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
         
         # تحديث نفس ملف booking-result.json (المرة الثانية)
         cat > booking-result.json << EOF
@@ -274,18 +282,17 @@ jobs:
         path: |
           booking-result.json
           booking-url.json
+          extracted-data.json
           page.html
           booking-page.html
-          page-clean.html
-          booking-clean.html
         retention-days: 7
     
-    # ⭐️ الخطوة 11: حفظ النتيجة في المستودع (تم إصلاح الخطأ)
+    # ⭐️ الخطوة 11: حفظ النتيجة في المستودع
     - name: Commit and push result
       if: success()
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-        git add booking-result.json booking-url.json 2>/dev/null || true
+        git add booking-result.json booking-url.json extracted-data.json 2>/dev/null || true
         git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
         git push
