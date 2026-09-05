@@ -1,4 +1,4 @@
-name: Elite Hospital Booking - Ultra Advanced
+name: Elite Hospital Booking - Instant
 
 on:
   repository_dispatch:
@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  advanced_booking:
+  instant_booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,67 +42,64 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ تثبيت Python مع التخزين المؤقت
+    # ⭐️ تثبيت Python
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
         cache: 'pip'
     
-    # ⭐️ تثبيت Playwright مع التخزين المؤقت
-    - name: Cache Playwright
+    # ⭐️ تثبيت Playwright
+    - name: Install dependencies
+      run: |
+        pip install playwright httpx pyjwt
+    
+    # ⭐️ تثبيت المتصفح مع التخزين المؤقت
+    - name: Cache Playwright browsers
       id: cache-playwright
       uses: actions/cache@v3
       with:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/pip
-        key: playwright-advanced-${{ runner.os }}-v3
+        key: playwright-instant-${{ runner.os }}-v2
         restore-keys: |
-          playwright-advanced-${{ runner.os }}-v3
+          playwright-instant-${{ runner.os }}-v2
+          playwright-instant-${{ runner.os }}-
     
-    - name: Install dependencies
-      run: |
-        pip install playwright httpx pyjwt
-    
-    - name: Install browsers (cached)
+    - name: Install browsers
       if: steps.cache-playwright.outputs.cache-hit != 'true'
       run: |
         playwright install chromium --with-deps
     
-    - name: Install deps (cached)
+    - name: Install deps
       if: steps.cache-playwright.outputs.cache-hit == 'true'
       run: |
         playwright install-deps
     
-    # ⭐️ إنشاء السكريبت المتقدم
-    - name: Create advanced booking script
+    # ⭐️ إنشاء السكريبت (بدون انتظار)
+    - name: Create instant script
       run: |
         cat > book.py << 'EOF'
         import asyncio
         import json
         import os
-        import time
         import random
-        import re
-        from datetime import datetime, timedelta
-        from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+        from datetime import datetime
+        from playwright.async_api import async_playwright
         
-        print(f"🚀 بدء التشغيل المتقدم - {datetime.now()}")
+        print(f"🚀 بدء التشغيل الفوري - {datetime.now()}")
         
-        # ============= الإعدادات المتقدمة =============
+        # ============= الإعدادات =============
         
-        # ⭐️ قائمة User-Agents للتنوع (من الملف الأول)
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.127 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.2592.61',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.141 Safari/537.36',
         ]
         
-        # ⭐️ أحجام شاشة متنوعة (من الملف الأول)
         VIEWPORTS = [
             {'width': 1920, 'height': 1080},
             {'width': 1366, 'height': 768},
@@ -111,235 +108,77 @@ jobs:
             {'width': 1280, 'height': 720},
         ]
         
-        # ⭐️ بروكسيات مصرية (من الملف الأول)
-        EGYPTIAN_PROXIES = [
-            "http://41.33.219.130:1981",
-            "http://41.33.219.130:3128",
-            "http://156.210.105.142:8080",
-            "http://156.210.105.142:3128",
-            "http://197.47.105.210:8080",
-            "http://197.47.105.210:3128",
-        ]
-        
-        # ============= وظائف مساعدة =============
-        
         def get_random_user_agent():
             return random.choice(USER_AGENTS)
         
         def get_random_viewport():
             return random.choice(VIEWPORTS)
         
-        def get_random_proxy():
-            return random.choice(EGYPTIAN_PROXIES)
-        
-        def get_egypt_time():
-            return datetime.now() + timedelta(hours=2)
-        
         def random_delay(min_ms, max_ms):
             return random.uniform(min_ms / 1000, max_ms / 1000)
         
-        def random_offset():
-            return (random.random() - 0.5) * 20
+        # ============= إعداد المتصفح =============
         
-        # ============= الانتظار حتى 7:00 صباحاً =============
-        
-        async def wait_until_7am():
-            """الانتظار حتى 7:00 صباحاً بتوقيت مصر"""
-            print("⏳ الانتظار حتى 7:00 صباحاً بتوقيت مصر...")
-            
-            # إذا كان تشغيل يدوي، تخطي
-            if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
-                print("🔄 تشغيل يدوي - تخطي الانتظار")
-                return
-            
-            # التحقق كل 5 ثواني (سريع)
-            for _ in range(120):  # 10 دقائق كحد أقصى
-                egypt_time = get_egypt_time()
-                hours = egypt_time.hour
-                minutes = egypt_time.minute
-                
-                if hours >= 7 and minutes >= 0:
-                    print("✅ الساعة 7:00 صباحاً - بدء التنفيذ!")
-                    return
-                
-                print(f"🕐 الوقت الحالي (مصر): {hours:02d}:{minutes:02d} - الانتظار...")
-                await asyncio.sleep(5)
-        
-        # ============= إعداد المتصفح المتقدم =============
-        
-        async def setup_advanced_browser(playwright):
-            """إعداد متصفح متقدم مع جميع تقنيات التخفي"""
+        async def setup_browser(playwright):
+            """إعداد متصفح سريع"""
             
             user_agent = get_random_user_agent()
             viewport = get_random_viewport()
-            proxy_server = os.environ.get("PROXY_SERVER", "")
             
-            if not proxy_server:
-                proxy_server = get_random_proxy()
-                print(f"🔄 استخدام بروكسي عشوائي: {proxy_server}")
-            
-            proxy_config = {"server": proxy_server}
-            
-            proxy_username = os.environ.get("PROXY_USERNAME", "")
-            proxy_password = os.environ.get("PROXY_PASSWORD", "")
-            if proxy_username and proxy_password:
-                proxy_config["username"] = proxy_username
-                proxy_config["password"] = proxy_password
-                print(f"🔐 استخدام بروكسي مع مصادقة")
-            
-            print(f"🕵️ User-Agent: {user_agent[:50]}...")
-            print(f"📱 حجم الشاشة: {viewport['width']}x{viewport['height']}")
-            print(f"🌐 Proxy: {proxy_config['server']}")
-            
-            # ⭐️ تشغيل المتصفح مع جميع خيارات التخفي (من الملفين)
             browser = await playwright.chromium.launch(
                 headless=True,
                 args=[
                     '--no-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-extensions',
-                    '--disable-setuid-sandbox',
-                    '--disable-web-security',
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                    '--disable-site-isolation-trials',
-                    '--disable-features=BlockInsecurePrivateNetworkRequests',
-                    '--disable-features=OutOfBlinkCors',
-                    '--window-size={},{}'.format(viewport['width'], viewport['height']),
-                    '--start-maximized',
-                    '--disable-infobars',
-                    '--disable-notifications',
-                    '--disable-popup-blocking',
                     '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
                     '--disable-renderer-backgrounding',
-                    '--disable-field-trial-config',
-                    '--disable-ipc-flooding-protection',
-                    '--disable-sync',
-                    '--disable-domain-reliability',
-                    '--disable-component-update',
-                    '--disable-features=SharedArrayBuffer',
-                    '--disable-features=PrivacySandboxAdsAPIs',
-                    '--disable-features=FencedFrames',
+                    '--window-size={},{}'.format(viewport['width'], viewport['height']),
                 ]
             )
             
-            # ⭐️ إنشاء السياق مع إعدادات متقدمة (من الملف الأول)
             context = await browser.new_context(
                 viewport=viewport,
                 user_agent=user_agent,
                 locale='ar-EG',
                 timezone_id='Africa/Cairo',
-                permissions=['geolocation'],
-                device_scale_factor=random.choice([1, 1.25, 1.5, 2]),
-                has_touch=random.choice([True, False]),
-                is_mobile=False,
-                java_script_enabled=True,
-                accept_downloads=False,
                 ignore_https_errors=True,
-                proxy=proxy_config,
                 extra_http_headers={
                     'Accept-Language': 'ar-EG,ar;q=0.9,en;q=0.8',
                     'Accept-Encoding': 'gzip, deflate, br',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Cache-Control': 'max-age=0',
                 }
             )
             
             page = await context.new_page()
             
-            # ⭐️ إضافة سكربت التخفي المتقدم (من الملف الأول)
+            # تخفي خفيف
             await page.add_init_script("""
-                // إخفاء webdriver
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
-                
-                // إخفاء chrome
-                Object.defineProperty(navigator, 'chrome', {
-                    get: () => ({ runtime: {} })
-                });
-                
-                // إخفاء plugins
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
-                });
-                
-                // إخفاء languages
                 Object.defineProperty(navigator, 'languages', {
                     get: () => ['ar-EG', 'ar', 'en']
                 });
-                
-                // إخفاء window.chrome
                 window.chrome = { runtime: {} };
-                
-                // إخفاء علامات الأتمتة الأخرى
-                delete window.__webdriver_evaluate;
-                delete window.__webdriver_script_function;
-                delete window.__webdriver_script_func;
-                delete window.__webdriver_script_fn;
-                delete window.__fxdriver_evaluate;
-                delete window.__driver_unwrapped;
-                delete window.__Selenium_evaluate;
-                delete window.__WEBDRIVER_EVALUATE;
-                delete window.__selenium_evaluate;
-                delete window.__lastWatirAlert;
-                delete window.__lastWatirConfirm;
-                delete window.__lastWatirPrompt;
-                window.__cdp = undefined;
-                window.callPhantom = undefined;
-                window._phantom = undefined;
-                window.phantom = undefined;
             """)
             
-            # ⭐️ تعيين المهلة (من الملف الأول)
-            page.set_default_timeout(60000)
-            
+            page.set_default_timeout(30000)
             return browser, page
         
         # ============= استخراج البيانات =============
         
-        async def extract_booking_data(page):
-            """استخراج جميع البيانات من الصفحة دفعة واحدة (سريع)"""
+        async def extract_data(page):
+            """استخراج البيانات دفعة واحدة"""
             return await page.evaluate("""
                 () => {
-                    const getText = (selector) => {
-                        const el = document.querySelector(selector);
-                        return el ? el.textContent.trim() : '';
-                    };
-                    
+                    const g = (s) => document.querySelector(s)?.textContent?.trim() || '';
                     return {
-                        doctorName: getText('h5'),
-                        clinicName: getText('h6'),
-                        patientNumber: getText('h1'),
-                        currentNumber: getText('h2'),
-                        appointmentDate: getText('small'),
-                        pageTitle: document.title || ''
-                    };
-                }
-            """)
-        
-        async def extract_booking_data_from_booking_page(page):
-            """استخراج البيانات من صفحة الحجز"""
-            return await page.evaluate("""
-                () => {
-                    const getText = (selector) => {
-                        const el = document.querySelector(selector);
-                        return el ? el.textContent.trim() : '';
-                    };
-                    
-                    return {
-                        patientNumber: getText('h1'),
-                        currentNumber: getText('h2'),
-                        appointmentDate: getText('small')
+                        doctorName: g('h5'),
+                        clinicName: g('h6'),
+                        patientNumber: g('h1'),
+                        currentNumber: g('h2'),
+                        appointmentDate: g('small')
                     };
                 }
             """)
@@ -347,159 +186,104 @@ jobs:
         # ============= الوظيفة الرئيسية =============
         
         async def book_appointment(url):
-            """الوظيفة الرئيسية للحجز مع جميع التقنيات المتقدمة"""
-            
-            print(f"🚀 بدء الحجز المتقدم...")
             print(f"🌐 الرابط: {url}")
+            print("⚡ تنفيذ فوري (بدون انتظار)")
             
-            # ⏳ انتظار 7:00 صباحاً
-            await wait_until_7am()
-            
-            # إعادة المحاولة مع بروكسي جديد (من الملف الأول)
-            max_retries = 3
-            for attempt in range(max_retries):
+            async with async_playwright() as p:
+                browser, page = await setup_browser(p)
+                
                 try:
-                    async with async_playwright() as playwright:
-                        browser, page = await setup_advanced_browser(playwright)
-                        
-                        print("🌐 تحميل صفحة الموعد...")
-                        
-                        # ⭐️ استخدام wait_until='commit' للسرعة (من الملف الثاني)
-                        await page.goto(url, wait_until='commit', timeout=30000)
-                        
-                        # ⭐️ انتظار العنصر المطلوب فقط (سريع)
-                        try:
-                            await page.wait_for_selector('h5', timeout=5000)
-                        except:
-                            await page.wait_for_selector('body', timeout=3000)
-                        
-                        # ⭐️ تأخير بسيط
-                        await asyncio.sleep(random_delay(300, 800))
-                        
-                        # 📋 استخراج البيانات الأولية
-                        print("📋 استخراج البيانات...")
-                        initial_data = await extract_booking_data(page)
-                        
-                        print(f"👨‍⚕️ الطبيب: {initial_data['doctorName']}")
-                        print(f"🏥 العيادة: {initial_data['clinicName']}")
-                        print(f"🔢 رقم المريض: {initial_data['patientNumber']}")
-                        print(f"📊 الرقم الحالي: {initial_data['currentNumber']}")
-                        
-                        # 🔍 البحث عن زر "قم بالحجز الأن" والضغط عليه
-                        print("🔍 البحث عن زر 'قم بالحجز الأن'...")
-                        button_clicked = False
-                        
-                        # ⭐️ الطريقة 1: الضغط المباشر عبر JavaScript (أسرع)
-                        try:
-                            result = await page.evaluate("""
-                                () => {
-                                    const buttons = document.querySelectorAll('a');
-                                    for (const btn of buttons) {
-                                        if (btn.textContent.includes('قم بالحجز الأن')) {
-                                            btn.click();
-                                            return true;
-                                        }
-                                    }
-                                    return false;
+                    print("🌐 تحميل الصفحة...")
+                    await page.goto(url, wait_until='commit', timeout=20000)
+                    
+                    try:
+                        await page.wait_for_selector('h5', timeout=3000)
+                    except:
+                        await page.wait_for_selector('body', timeout=2000)
+                    
+                    await asyncio.sleep(random_delay(200, 500))
+                    
+                    # 📋 استخراج البيانات
+                    print("📋 استخراج البيانات...")
+                    data = await extract_data(page)
+                    
+                    print(f"👨‍⚕️ الطبيب: {data['doctorName']}")
+                    print(f"🏥 العيادة: {data['clinicName']}")
+                    print(f"🔢 رقم المريض: {data['patientNumber']}")
+                    print(f"📊 الرقم الحالي: {data['currentNumber']}")
+                    
+                    # 🔍 الضغط على الزر
+                    print("🔍 البحث عن زر 'قم بالحجز الأن'...")
+                    
+                    # طريقة 1: JavaScript مباشر
+                    clicked = await page.evaluate("""
+                        () => {
+                            for (const btn of document.querySelectorAll('a')) {
+                                if (btn.textContent.includes('قم بالحجز الأن')) {
+                                    btn.click();
+                                    return true;
                                 }
-                            """)
-                            if result:
-                                button_clicked = True
-                                print("🖱️ تم الضغط عبر JavaScript!")
-                        except:
-                            pass
-                        
-                        # ⭐️ الطريقة 2: البحث باستخدام locator
-                        if not button_clicked:
-                            try:
-                                button = await page.locator('a:has-text("قم بالحجز الأن")').first
-                                if await button.count() > 0:
-                                    # محاكاة حركة الفأرة (من الملف الأول)
-                                    box = await button.bounding_box()
-                                    if box:
-                                        x = box['x'] + box['width'] / 2
-                                        y = box['y'] + box['height'] / 2
-                                        
-                                        await page.mouse.move(x + random_offset(), y + random_offset())
-                                        await asyncio.sleep(random_delay(100, 300))
-                                        await page.mouse.move(x, y)
-                                        await asyncio.sleep(random_delay(100, 300))
-                                        await page.mouse.click(x, y)
-                                        button_clicked = True
-                                        print("🖱️ تم الضغط على الزر!")
-                            except:
-                                pass
-                        
-                        # ⭐️ الطريقة 3: البحث بالرابط
-                        if not button_clicked:
-                            try:
-                                button = await page.locator('a[href*="Booking/Find"]').first
-                                if await button.count() > 0:
-                                    await button.click()
-                                    button_clicked = True
-                                    print("🖱️ تم الضغط عبر الرابط!")
-                            except:
-                                pass
-                        
-                        if not button_clicked:
-                            print("❌ لم يتم العثور على زر الحجز!")
-                            await browser.close()
-                            return None
-                        
-                        # ⏳ انتظار التنقل (سريع)
-                        await asyncio.sleep(random_delay(500, 1000))
-                        
-                        try:
-                            await page.wait_for_navigation(wait_until='commit', timeout=10000)
-                        except:
-                            pass
-                        
-                        # 📋 استخراج بيانات الحجز
-                        print("📋 استخراج بيانات الحجز...")
-                        booking_data = await extract_booking_data_from_booking_page(page)
-                        
-                        # دمج البيانات
-                        final_data = {
-                            'doctorName': initial_data['doctorName'],
-                            'clinicName': initial_data['clinicName'],
-                            'patientNumber': booking_data['patientNumber'] or initial_data['patientNumber'],
-                            'currentNumber': booking_data['currentNumber'] or initial_data['currentNumber'],
-                            'appointmentDate': booking_data['appointmentDate'] or initial_data['appointmentDate'],
-                            'status': '✅ تم الحجز بنجاح',
-                            'timestamp': datetime.now().isoformat(),
-                            'egyptTime': get_egypt_time().strftime('%Y-%m-%d %H:%M:%S'),
-                            'bookingURL': url,
-                            'userAgent': await page.evaluate("navigator.userAgent"),
-                            'viewport': await page.evaluate("({width: window.innerWidth, height: window.innerHeight})")
+                            }
+                            return false;
                         }
-                        
-                        # 💾 حفظ النتيجة
-                        with open('booking-result.json', 'w', encoding='utf-8') as f:
-                            json.dump(final_data, f, ensure_ascii=False, indent=2)
-                        
-                        print("✅ تم حفظ النتيجة")
-                        print(f"📋 البيانات النهائية: {json.dumps(final_data, ensure_ascii=False, indent=2)}")
-                        
-                        # 💾 حفظ HTML (للتحقق)
-                        html = await page.content()
-                        with open('booking-page.html', 'w', encoding='utf-8') as f:
-                            f.write(html)
-                        
-                        print("✅ تم حفظ صفحة الحجز")
-                        
+                    """)
+                    
+                    # طريقة 2: locator
+                    if not clicked:
+                        try:
+                            btn = await page.locator('a[href*="Booking/Find"]').first
+                            if await btn.count() > 0:
+                                await btn.click()
+                                clicked = True
+                        except:
+                            pass
+                    
+                    if not clicked:
+                        print("❌ لم يتم العثور على زر الحجز")
                         await browser.close()
-                        print("✅ تم إنهاء العملية بنجاح!")
-                        
-                        return final_data
-                        
+                        return None
+                    
+                    print("🖱️ تم الضغط على الزر!")
+                    
+                    await asyncio.sleep(random_delay(300, 600))
+                    
+                    try:
+                        await page.wait_for_navigation(wait_until='commit', timeout=5000)
+                    except:
+                        pass
+                    
+                    # 📋 استخراج بيانات الحجز
+                    print("📋 استخراج بيانات الحجز...")
+                    booking_data = await extract_data(page)
+                    
+                    # دمج البيانات
+                    final_data = {
+                        'doctorName': data['doctorName'],
+                        'clinicName': data['clinicName'],
+                        'patientNumber': booking_data['patientNumber'] or data['patientNumber'],
+                        'currentNumber': booking_data['currentNumber'] or data['currentNumber'],
+                        'appointmentDate': booking_data['appointmentDate'] or data['appointmentDate'],
+                        'status': '✅ تم الحجز بنجاح',
+                        'timestamp': datetime.now().isoformat(),
+                        'bookingURL': url
+                    }
+                    
+                    # 💾 حفظ النتيجة
+                    with open('booking-result.json', 'w', encoding='utf-8') as f:
+                        json.dump(final_data, f, ensure_ascii=False, indent=2)
+                    
+                    print("✅ تم حفظ النتيجة")
+                    print(f"📋 {json.dumps(final_data, ensure_ascii=False, indent=2)}")
+                    
+                    await browser.close()
+                    print("✅ تم الانتهاء!")
+                    
+                    return final_data
+                    
                 except Exception as e:
-                    print(f"⚠️ محاولة {attempt+1} فشلت: {e}")
-                    if attempt == max_retries - 1:
-                        raise
-                    print("🔄 إعادة المحاولة مع بروكسي جديد...")
-                    await asyncio.sleep(random_delay(3000, 5000))
-            
-            return None
+                    print(f"❌ خطأ: {e}")
+                    await browser.close()
+                    return None
         
         # ============= التشغيل =============
         
@@ -507,7 +291,6 @@ jobs:
             url = os.environ.get('BOOKING_URL', 'https://www.elitehospital.org/Queue/958053')
             result = await book_appointment(url)
             if not result:
-                print("❌ فشل الحجز")
                 exit(1)
         
         if __name__ == "__main__":
@@ -515,7 +298,7 @@ jobs:
         EOF
     
     # ⭐️ تشغيل السكريبت
-    - name: Run advanced booking
+    - name: Run booking script
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url || 'https://www.elitehospital.org/Queue/958053' }}"
         export BOOKING_URL="$URL"
@@ -530,7 +313,6 @@ jobs:
         name: booking-result
         path: |
           booking-result.json
-          booking-page.html
           booking-url.json
         retention-days: 7
     
@@ -541,5 +323,5 @@ jobs:
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
         git add booking-result.json booking-url.json 2>/dev/null || true
-        git commit -m "Update booking result [skip ci] - $(TZ='Africa/Cairo' date +'%Y-%m-%d %H:%M:%S')" || echo "No changes"
+        git commit -m "Update booking result [skip ci]" || echo "No changes"
         git push
