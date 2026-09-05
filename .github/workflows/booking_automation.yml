@@ -1,4 +1,4 @@
-name: Elite Hospital Booking Automation - Playwright
+name: Elite Hospital Booking Automation - Python
 
 on:
   repository_dispatch:
@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  playwright_booking:
+  python_booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,303 +43,295 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 3: تثبيت Playwright
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    # ⭐️ الخطوة 3: تثبيت Python و Playwright
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
-        node-version: '18'
+        python-version: '3.11'
     
-    - name: Install Playwright
+    - name: Install Python dependencies
       run: |
-        npm init -y
-        npm install playwright
-        npx playwright install chromium
-        npx playwright install-deps
+        pip install playwright
+        playwright install chromium
+        playwright install-deps
     
-    # ⭐️ الخطوة 4: إنشاء سكريبت Playwright
-    - name: Create Playwright booking script
+    # ⭐️ الخطوة 4: إنشاء سكريبت Python
+    - name: Create Python booking script
       run: |
-        cat > book.js << 'EOF'
-        const { chromium } = require('playwright');
-        const fs = require('fs');
+        cat > book.py << 'EOF'
+        import asyncio
+        import json
+        import random
+        import os
+        from datetime import datetime, timedelta
+        from playwright.async_api import async_playwright
         
-        async function bookAppointment(url) {
-            console.log('🚀 بدء التشغيل مع Playwright...');
-            console.log(`🌐 الرابط: ${url}`);
+        # إعداد التوقيت
+        def get_egypt_time():
+            """الحصول على الوقت الحالي بتوقيت مصر"""
+            return datetime.now() + timedelta(hours=2)
+        
+        def random_delay(min_ms, max_ms):
+            """تأخير عشوائي لمحاكاة الإنسان"""
+            return random.uniform(min_ms / 1000, max_ms / 1000)
+        
+        def random_offset():
+            """إزاحة عشوائية لحركة الفأرة"""
+            return (random.random() - 0.5) * 20
+        
+        async def wait_until_7am():
+            """الانتظار حتى الساعة 7:00 صباحاً بتوقيت مصر"""
+            print("⏳ الانتظار حتى 7:00 صباحاً بتوقيت مصر...")
             
-            // ⏳ انتظار حتى 7:00 صباحاً بتوقيت مصر
-            console.log('⏳ الانتظار حتى 7:00 صباحاً بتوقيت مصر...');
-            await waitUntil7AM();
-            
-            // 🚀 تشغيل المتصفح
-            const browser = await chromium.launch({
-                headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu',
-                    '--window-size=1920,1080'
-                ]
-            });
-            
-            const context = await browser.newContext({
-                viewport: { width: 1920, height: 1080 },
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                locale: 'ar-EG',
-                timezoneId: 'Africa/Cairo',
-                permissions: ['geolocation'],
-                deviceScaleFactor: 1,
-                hasTouch: false,
-                isMobile: false
-            });
-            
-            const page = await context.newPage();
-            
-            // إخفاء علامات البوت
-            await page.addInitScript(() => {
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
+            while True:
+                egypt_time = get_egypt_time()
+                hours = egypt_time.hour
+                minutes = egypt_time.minute
                 
-                // محاكاة اللغة
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['ar-EG', 'ar', 'en']
-                });
+                print(f"🕐 الوقت الحالي (مصر): {hours:02d}:{minutes:02d}")
                 
-                // محاكاة التشغيل
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5]
-                });
-            });
-            
-            // 📥 تحميل الصفحة
-            console.log('🌐 تحميل صفحة الموعد...');
-            await page.goto(url, {
-                waitUntil: 'networkidle',
-                timeout: 60000
-            });
-            
-            // ⏳ تأخير عشوائي (محاكاة الإنسان)
-            await randomDelay(1000, 3000);
-            
-            // 📋 استخراج البيانات الأولية
-            console.log('📋 استخراج البيانات...');
-            const initialData = await page.evaluate(() => {
-                const getText = (selector) => {
-                    const el = document.querySelector(selector);
-                    return el ? el.textContent.trim() : '';
-                };
+                if hours >= 7 and minutes >= 0:
+                    print("✅ الساعة 7:00 صباحاً - بدء التنفيذ!")
+                    break
                 
-                return {
-                    doctorName: getText('h5'),
-                    clinicName: getText('h6'),
-                    patientNumber: getText('h1'),
-                    currentNumber: getText('h2'),
-                    appointmentDate: getText('small'),
-                    status: '⏳ جاري الحجز...'
-                };
-            });
+                print("⏳ الانتظار 30 ثانية...")
+                await asyncio.sleep(30)
+        
+        async def book_appointment(url):
+            """الوظيفة الرئيسية للحجز"""
+            print(f"🚀 بدء التشغيل مع Python + Playwright...")
+            print(f"🌐 الرابط: {url}")
             
-            console.log('👨‍⚕️ الطبيب:', initialData.doctorName);
-            console.log('🏥 العيادة:', initialData.clinicName);
-            console.log('🔢 رقم المريض:', initialData.patientNumber);
-            console.log('📊 الرقم الحالي:', initialData.currentNumber);
+            # ⏳ انتظار 7:00 صباحاً (إذا لم يكن تشغيل يدوي)
+            if os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch':
+                await wait_until_7am()
+            else:
+                print("🔄 تشغيل يدوي - تخطي الانتظار")
             
-            // 🔍 البحث عن زر "قم بالحجز الأن"
-            console.log('🔍 البحث عن زر "قم بالحجز الأن"...');
-            
-            // محاولة طرق متعددة للعثور على الزر
-            let buttonClicked = false;
-            
-            // الطريقة 1: البحث عن النص
-            try {
-                const button = await page.locator('a:has-text("قم بالحجز الأن")').first();
-                if (await button.count() > 0) {
-                    console.log('✅ تم العثور على الزر بالنص');
-                    
-                    // محاكاة حركة الفأرة
-                    const box = await button.boundingBox();
-                    if (box) {
-                        const x = box.x + box.width / 2;
-                        const y = box.y + box.height / 2;
-                        
-                        // حركة عشوائية
-                        await page.mouse.move(x + randomOffset(), y + randomOffset());
-                        await randomDelay(200, 600);
-                        await page.mouse.move(x, y);
-                        await randomDelay(300, 800);
-                        
-                        // الضغط
-                        await page.mouse.click(x, y);
-                        buttonClicked = true;
-                        console.log('🖱️ تم الضغط على الزر!');
-                    }
-                }
-            } catch (e) {
-                console.log('⚠️ فشل البحث بالنص');
-            }
-            
-            // الطريقة 2: البحث عن الرابط
-            if (!buttonClicked) {
-                try {
-                    const button = await page.locator('a[href*="Booking/Find"]').first();
-                    if (await button.count() > 0) {
-                        console.log('✅ تم العثور على الزر بالرابط');
-                        await button.click();
-                        buttonClicked = true;
-                        console.log('🖱️ تم الضغط على الزر!');
-                    }
-                } catch (e) {
-                    console.log('⚠️ فشل البحث بالرابط');
-                }
-            }
-            
-            // الطريقة 3: البحث عن عنصر cta
-            if (!buttonClicked) {
-                try {
-                    const button = await page.locator('.cta a.nav-link').first();
-                    if (await button.count() > 0) {
-                        console.log('✅ تم العثور على الزر في cta');
-                        await button.click();
-                        buttonClicked = true;
-                        console.log('🖱️ تم الضغط على الزر!');
-                    }
-                } catch (e) {
-                    console.log('⚠️ فشل البحث في cta');
-                }
-            }
-            
-            // الطريقة 4: البحث العام
-            if (!buttonClicked) {
-                try {
-                    await page.evaluate(() => {
-                        const buttons = document.querySelectorAll('a');
-                        for (const btn of buttons) {
-                            if (btn.textContent.includes('قم بالحجز الأن')) {
-                                btn.click();
-                                return;
-                            }
-                        }
+            # 🚀 تشغيل المتصفح
+            async with async_playwright() as p:
+                # تشغيل المتصفح
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--disable-gpu',
+                        '--window-size=1920,1080'
+                    ]
+                )
+                
+                # إنشاء سياق المتصفح
+                context = await browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale='ar-EG',
+                    timezone_id='Africa/Cairo'
+                )
+                
+                page = await context.new_page()
+                
+                # إخفاء علامات البوت
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
                     });
-                    buttonClicked = true;
-                    console.log('🖱️ تم الضغط عبر JavaScript!');
-                } catch (e) {
-                    console.log('⚠️ فشل الضغط عبر JavaScript');
-                }
-            }
-            
-            if (!buttonClicked) {
-                console.log('❌ لم يتم العثور على زر الحجز!');
-                await browser.close();
-                process.exit(1);
-            }
-            
-            // ⏳ انتظار تحميل الصفحة الجديدة
-            console.log('⏳ انتظار تحميل صفحة الحجز...');
-            await randomDelay(1000, 2000);
-            
-            try {
-                await page.waitForNavigation({
-                    waitUntil: 'networkidle',
-                    timeout: 30000
-                });
-            } catch (e) {
-                console.log('⚠️ لم يتم التنقل، قد تكون الصفحة نفسها');
-            }
-            
-            // 📋 استخراج البيانات من صفحة الحجز
-            console.log('📋 استخراج بيانات الحجز...');
-            const bookingData = await page.evaluate(() => {
-                const getText = (selector) => {
-                    const el = document.querySelector(selector);
-                    return el ? el.textContent.trim() : '';
-                };
+                    
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['ar-EG', 'ar', 'en']
+                    });
+                    
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                """)
                 
-                return {
-                    patientNumber: getText('h1'),
-                    currentNumber: getText('h2'),
-                    appointmentDate: getText('small')
-                };
-            });
-            
-            // دمج البيانات
-            const finalData = {
-                ...initialData,
-                patientNumber: bookingData.patientNumber || initialData.patientNumber,
-                currentNumber: bookingData.currentNumber || initialData.currentNumber,
-                appointmentDate: bookingData.appointmentDate || initialData.appointmentDate,
-                status: '✅ تم الحجز بنجاح',
-                timestamp: new Date().toISOString(),
-                egyptTime: new Date().toLocaleString('ar-EG', {
-                    timeZone: 'Africa/Cairo'
-                }),
-                bookingURL: url
-            };
-            
-            // حفظ النتيجة
-            fs.writeFileSync('booking-result.json', JSON.stringify(finalData, null, 2));
-            console.log('✅ تم حفظ النتيجة');
-            console.log('📋 البيانات النهائية:', finalData);
-            
-            // حفظ صفحة HTML
-            const html = await page.content();
-            fs.writeFileSync('booking-page.html', html);
-            console.log('✅ تم حفظ صفحة الحجز');
-            
-            await browser.close();
-            console.log('✅ تم إنهاء العملية بنجاح!');
-        }
-        
-        // وظائف مساعدة
-        function randomDelay(min, max) {
-            return new Promise(resolve => {
-                const delay = Math.random() * (max - min) + min;
-                setTimeout(resolve, delay);
-            });
-        }
-        
-        function randomOffset() {
-            return (Math.random() - 0.5) * 20;
-        }
-        
-        function waitUntil7AM() {
-            return new Promise((resolve) => {
-                const checkTime = () => {
-                    const now = new Date();
-                    // توقيت مصر (UTC+2)
-                    const egyptTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
-                    const hours = egyptTime.getHours();
-                    const minutes = egyptTime.getMinutes();
-                    
-                    console.log(`🕐 الوقت الحالي (مصر): ${hours}:${minutes}`);
-                    
-                    if (hours >= 7 && minutes >= 0) {
-                        console.log('✅ الساعة 7:00 صباحاً - بدء التنفيذ!');
-                        resolve();
-                    } else {
-                        console.log(`⏳ الانتظار...`);
-                        setTimeout(checkTime, 30000);
+                # 📥 تحميل الصفحة
+                print("🌐 تحميل صفحة الموعد...")
+                await page.goto(url, wait_until='networkidle', timeout=60000)
+                
+                # ⏳ تأخير عشوائي
+                await asyncio.sleep(random_delay(1000, 3000))
+                
+                # 📋 استخراج البيانات الأولية
+                print("📋 استخراج البيانات...")
+                initial_data = await page.evaluate("""
+                    () => {
+                        const getText = (selector) => {
+                            const el = document.querySelector(selector);
+                            return el ? el.textContent.trim() : '';
+                        };
+                        
+                        return {
+                            doctorName: getText('h5'),
+                            clinicName: getText('h6'),
+                            patientNumber: getText('h1'),
+                            currentNumber: getText('h2'),
+                            appointmentDate: getText('small'),
+                            status: '⏳ جاري الحجز...'
+                        };
                     }
-                };
-                checkTime();
-            });
-        }
+                """)
+                
+                print(f"👨‍⚕️ الطبيب: {initial_data['doctorName']}")
+                print(f"🏥 العيادة: {initial_data['clinicName']}")
+                print(f"🔢 رقم المريض: {initial_data['patientNumber']}")
+                print(f"📊 الرقم الحالي: {initial_data['currentNumber']}")
+                print(f"📅 التاريخ: {initial_data['appointmentDate']}")
+                
+                # 🔍 البحث عن زر "قم بالحجز الأن"
+                print("🔍 البحث عن زر 'قم بالحجز الأن'...")
+                button_clicked = False
+                
+                # الطريقة 1: البحث بالنص
+                try:
+                    button = await page.locator('a:has-text("قم بالحجز الأن")').first
+                    if await button.count() > 0:
+                        print("✅ تم العثور على الزر بالنص")
+                        
+                        # محاكاة حركة الفأرة
+                        box = await button.bounding_box()
+                        if box:
+                            x = box['x'] + box['width'] / 2
+                            y = box['y'] + box['height'] / 2
+                            
+                            # حركة عشوائية
+                            await page.mouse.move(x + random_offset(), y + random_offset())
+                            await asyncio.sleep(random_delay(200, 600))
+                            await page.mouse.move(x, y)
+                            await asyncio.sleep(random_delay(300, 800))
+                            
+                            # الضغط
+                            await page.mouse.click(x, y)
+                            button_clicked = True
+                            print("🖱️ تم الضغط على الزر!")
+                except Exception as e:
+                    print(f"⚠️ فشل البحث بالنص: {e}")
+                
+                # الطريقة 2: البحث بالرابط
+                if not button_clicked:
+                    try:
+                        button = await page.locator('a[href*="Booking/Find"]').first
+                        if await button.count() > 0:
+                            print("✅ تم العثور على الزر بالرابط")
+                            await button.click()
+                            button_clicked = True
+                            print("🖱️ تم الضغط على الزر!")
+                    except Exception as e:
+                        print(f"⚠️ فشل البحث بالرابط: {e}")
+                
+                # الطريقة 3: البحث في عنصر cta
+                if not button_clicked:
+                    try:
+                        button = await page.locator('.cta a.nav-link').first
+                        if await button.count() > 0:
+                            print("✅ تم العثور على الزر في cta")
+                            await button.click()
+                            button_clicked = True
+                            print("🖱️ تم الضغط على الزر!")
+                    except Exception as e:
+                        print(f"⚠️ فشل البحث في cta: {e}")
+                
+                # الطريقة 4: البحث العام
+                if not button_clicked:
+                    try:
+                        await page.evaluate("""
+                            () => {
+                                const buttons = document.querySelectorAll('a');
+                                for (const btn of buttons) {
+                                    if (btn.textContent.includes('قم بالحجز الأن')) {
+                                        btn.click();
+                                        return;
+                                    }
+                                }
+                            }
+                        """)
+                        button_clicked = True
+                        print("🖱️ تم الضغط عبر JavaScript!")
+                    except Exception as e:
+                        print(f"⚠️ فشل الضغط عبر JavaScript: {e}")
+                
+                if not button_clicked:
+                    print("❌ لم يتم العثور على زر الحجز!")
+                    await browser.close()
+                    return False
+                
+                # ⏳ انتظار تحميل الصفحة الجديدة
+                print("⏳ انتظار تحميل صفحة الحجز...")
+                await asyncio.sleep(random_delay(1000, 2000))
+                
+                try:
+                    await page.wait_for_navigation(wait_until='networkidle', timeout=30000)
+                except Exception as e:
+                    print(f"⚠️ لم يتم التنقل، قد تكون الصفحة نفسها: {e}")
+                
+                # 📋 استخراج البيانات من صفحة الحجز
+                print("📋 استخراج بيانات الحجز...")
+                booking_data = await page.evaluate("""
+                    () => {
+                        const getText = (selector) => {
+                            const el = document.querySelector(selector);
+                            return el ? el.textContent.trim() : '';
+                        };
+                        
+                        return {
+                            patientNumber: getText('h1'),
+                            currentNumber: getText('h2'),
+                            appointmentDate: getText('small')
+                        };
+                    }
+                """)
+                
+                # دمج البيانات
+                final_data = {
+                    'doctorName': initial_data['doctorName'],
+                    'clinicName': initial_data['clinicName'],
+                    'patientNumber': booking_data['patientNumber'] or initial_data['patientNumber'],
+                    'currentNumber': booking_data['currentNumber'] or initial_data['currentNumber'],
+                    'appointmentDate': booking_data['appointmentDate'] or initial_data['appointmentDate'],
+                    'status': '✅ تم الحجز بنجاح',
+                    'timestamp': datetime.now().isoformat(),
+                    'egyptTime': get_egypt_time().strftime('%Y-%m-%d %H:%M:%S'),
+                    'bookingURL': url
+                }
+                
+                # 💾 حفظ النتيجة
+                with open('booking-result.json', 'w', encoding='utf-8') as f:
+                    json.dump(final_data, f, ensure_ascii=False, indent=2)
+                
+                print("✅ تم حفظ النتيجة")
+                print(f"📋 البيانات النهائية: {json.dumps(final_data, ensure_ascii=False, indent=2)}")
+                
+                # 💾 حفظ صفحة HTML
+                html = await page.content()
+                with open('booking-page.html', 'w', encoding='utf-8') as f:
+                    f.write(html)
+                
+                print("✅ تم حفظ صفحة الحجز")
+                
+                await browser.close()
+                print("✅ تم إنهاء العملية بنجاح!")
+                return True
         
-        // تشغيل السكريبت
-        const url = process.argv[2] || 'https://www.elitehospital.org/Queue/958053';
-        bookAppointment(url).catch(error => {
-            console.error('❌ خطأ:', error);
-            process.exit(1);
-        });
+        # تشغيل السكريبت
+        async def main():
+            url = os.environ.get('BOOKING_URL', 'https://www.elitehospital.org/Queue/958053')
+            success = await book_appointment(url)
+            if not success:
+                exit(1)
+        
+        if __name__ == "__main__":
+            asyncio.run(main())
         EOF
     
     # ⭐️ الخطوة 5: تشغيل السكريبت
-    - name: Run Playwright booking script
+    - name: Run Python booking script
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url || 'https://www.elitehospital.org/Queue/958053' }}"
-        node book.js "$URL"
+        export BOOKING_URL="$URL"
+        python3 book.py
     
     # ⭐️ الخطوة 6: رفع النتيجة
     - name: Upload result
