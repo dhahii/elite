@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: [new_booking]
   schedule:
-    - cron: '15 12 * * *'  # 12:15 UTC = 3:15 عصراً مصر
+    - cron: '*/5 * * * *'  # كل 5 دقائق (للتجربة فقط)
   workflow_dispatch:
 
 jobs:
