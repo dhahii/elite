@@ -1,4 +1,4 @@
-name: Elite Hospital Booking Automation
+name: Elite Hospital Booking Automation - Playwright
 
 on:
   repository_dispatch:
@@ -8,12 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       booking_url:
-        description: 'رابط الموعد (للتجربة)'
+        description: 'رابط الموعد (للتجربة اليدوية)'
         required: false
         type: string
 
 jobs:
-  process_booking:
+  playwright_booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,7 +31,7 @@ jobs:
         echo "✅ تم حفظ رابط الموعد"
         cat booking-url.json
     
-    # ⭐️ الخطوة 2: قراءة الرابط من JSON
+    # ⭐️ الخطوة 2: قراءة الرابط
     - name: Read booking URL
       id: read_url
       run: |
@@ -43,246 +43,305 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 3: تحميل صفحة الموعد (فوراً)
-    - name: Load booking page
-      run: |
-        URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url }}"
-        
-        if [ -z "$URL" ]; then
-          echo "❌ لا يوجد رابط"
-          echo '{"success":false,"message":"لا يوجد رابط","timestamp":"'$(date -Iseconds)'","bookingDetails":null}' > booking-result.json
-          exit 1
-        fi
-        
-        echo "🌐 تحميل صفحة الموعد: $URL"
-        curl -s -L \
-          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
-          -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
-          "$URL" > page.html
-        
-        echo "📄 حجم الصفحة: $(wc -c < page.html) بايت"
-    
-    # ⭐️ الخطوة 4: تثبيت Python و BeautifulSoup
-    - name: Setup Python
-      uses: actions/setup-python@v4
+    # ⭐️ الخطوة 3: تثبيت Playwright
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
-        python-version: '3.10'
+        node-version: '18'
     
-    - name: Install Python dependencies
+    - name: Install Playwright
       run: |
-        pip install beautifulsoup4 lxml
+        npm init -y
+        npm install playwright
+        npx playwright install chromium
+        npx playwright install-deps
     
-    # ⭐️ الخطوة 5: استخراج اسم الدكتور والعيادة والتاريخ باستخدام Python
-    - name: Extract doctor, clinic and date
-      id: extract_data
+    # ⭐️ الخطوة 4: إنشاء سكريبت Playwright
+    - name: Create Playwright booking script
       run: |
-        echo "📋 استخراج البيانات باستخدام Python..."
+        cat > book.js << 'EOF'
+        const { chromium } = require('playwright');
+        const fs = require('fs');
         
-        python3 << 'PYTHON_SCRIPT'
-        import json
-        import re
-        from bs4 import BeautifulSoup
-        
-        # قراءة الصفحة
-        with open('page.html', 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # ⭐️ استخراج اسم الدكتور - من <h5> الأول
-        doctor_tag = soup.find('h5')
-        doctor_name = doctor_tag.get_text(strip=True) if doctor_tag else ""
-        
-        # إذا لم يتم العثور عليه، حاول البحث عن "د/"
-        if not doctor_name or doctor_name == "/":
-            match = re.search(r'د/[^<"\s]+(?:\s[^<"\s]+)*', html_content)
-            doctor_name = match.group(0) if match else "غير معروف"
-        
-        # ⭐️ استخراج اسم العيادة - من <h6> الأول
-        clinic_tag = soup.find('h6')
-        clinic_name = clinic_tag.get_text(strip=True) if clinic_tag else ""
-        
-        # إذا لم يتم العثور عليه، حاول البحث عن "عيادة"
-        if not clinic_name or clinic_name == "":
-            match = re.search(r'عيادة[^<"\n]+', html_content)
-            clinic_name = match.group(0) if match else "غير معروف"
-        
-        # ⭐️ استخراج التاريخ والوقت بشكل صحيح
-        # البحث عن التاريخ: 09-05-2026
-        date_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', html_content)
-        # البحث عن الوقت: 11:00
-        time_match = re.search(r'(\d{2}):(\d{2})', html_content)
-        
-        if date_match and time_match:
-            # تحويل التاريخ من DD-MM-YYYY إلى DD/MM/YYYY
-            day = date_match.group(1)
-            month = date_match.group(2)
-            year = date_match.group(3)
-            booking_date = f"{day}/{month}/{year}"
-            booking_time = f"{time_match.group(1)}:{time_match.group(2)}"
-            appointment_date = f"{booking_date} {booking_time}"
-        else:
-            appointment_date = ""
-        
-        # ⭐️ استخراج رقم الموعد من الرابط
-        url = "${{ steps.read_url.outputs.url }}"
-        patient_match = re.search(r'(\d{7,8})', url)
-        patient_number = patient_match.group(1) if patient_match else "غير معروف"
-        
-        # ⭐️ حفظ البيانات في ملف مؤقت
-        result = {
-            "doctorName": doctor_name if doctor_name else "غير معروف",
-            "clinicName": clinic_name if clinic_name else "غير معروف",
-            "patientNumber": patient_number,
-            "appointmentDate": appointment_date if appointment_date else "",
-            "bookingURL": url
-        }
-        
-        with open('extracted-data.json', 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-        
-        print(f"✅ تم استخراج البيانات:")
-        print(f"👨‍⚕️ الطبيب: {result['doctorName']}")
-        print(f"🏥 العيادة: {result['clinicName']}")
-        print(f"🔢 رقم الموعد: {result['patientNumber']}")
-        print(f"📅 التاريخ: {result['appointmentDate']}")
-        PYTHON_SCRIPT
-        
-        echo "⏳ الانتظار حتى الساعة 7:00 صباحاً..."
-    
-    # ⭐️ الخطوة 6: الانتظار حتى الساعة 7:00 صباحاً
-    - name: Wait until 7:00 AM
-      run: |
-        echo "⏳ بدء الانتظار حتى الساعة 7:00 صباحاً..."
-        
-        while true; do
-          CURRENT_HOUR=$(date +%H)
-          CURRENT_MIN=$(date +%M)
-          
-          if [ "$CURRENT_HOUR" -ge 7 ] && [ "$CURRENT_MIN" -ge 0 ]; then
-            echo "✅ الساعة الآن 7:00 صباحاً - بدء التنفيذ!"
-            break
-          fi
-          
-          echo "⏳ الوقت الآن: $(date +%H:%M) - الانتظار..."
-          sleep 60
-        done
-    
-    # ⭐️ الخطوة 7: البحث عن زر "قم بالحجز الأن"
-    - name: Find booking button
-      id: find_button
-      run: |
-        # البحث عن الرابط باستخدام عدة أنماط
-        BOOKING_LINK=$(grep -oE 'href="([^"]*Booking/Find[^"]*)"' page.html | head -1 | sed 's/href="//;s/"//g')
-        
-        if [ -z "$BOOKING_LINK" ]; then
-          BOOKING_LINK=$(grep -o "href='[^']*Booking/Find[^']*'" page.html | head -1 | sed "s/href='//;s/'//g")
-        fi
-        
-        if [ -z "$BOOKING_LINK" ]; then
-          BOOKING_LINK=$(grep -o 'href="[^"]*"' page.html | grep "Booking/Find" | head -1 | sed 's/href="//;s/"//g')
-        fi
+        async function bookAppointment(url) {
+            console.log('🚀 بدء التشغيل مع Playwright...');
+            console.log(`🌐 الرابط: ${url}`);
             
-        if [ -n "$BOOKING_LINK" ]; then
-          echo "✅ تم العثور على زر الحجز: $BOOKING_LINK"
-          echo "link=$BOOKING_LINK" >> $GITHUB_OUTPUT
-          
-          if [[ "$BOOKING_LINK" == https* ]]; then
-            FULL_URL="$BOOKING_LINK"
-          else
-            FULL_URL="https://www.elitehospital.org$BOOKING_LINK"
-          fi
-          echo "full_url=$FULL_URL" >> $GITHUB_OUTPUT
-        else
-          echo "⚠️ لم يتم العثور على زر الحجز"
-          echo "link=" >> $GITHUB_OUTPUT
-        fi
-    
-    # ⭐️ الخطوة 8: الضغط على زر الحجز (الساعة 7:00)
-    - name: Click booking button
-      if: steps.find_button.outputs.link != ''
-      run: |
-        FULL_URL="${{ steps.find_button.outputs.full_url }}"
-        echo "🖱️ الضغط على زر الحجز: $FULL_URL"
-        echo "⏰ الوقت: $(date)"
-        
-        curl -s -L \
-          -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9" \
-          -H "Accept-Language: ar-EG,ar;q=0.9,en;q=0.8" \
-          -H "Referer: ${{ steps.read_url.outputs.url }}" \
-          "$FULL_URL" > booking-page.html
-        
-        echo "📄 حجم صفحة الحجز: $(wc -c < booking-page.html) بايت"
-    
-    # ⭐️ الخطوة 9: استخراج رقم الدور وتحديث نفس الملف (المرة الثانية)
-    - name: Extract queue number and update same file
-      run: |
-        echo "📋 استخراج رقم الدور من صفحة الحجز..."
-        
-        # تنظيف الصفحة
-        cat booking-page.html | sed 's/&#x[0-9a-fA-F]*;//g' | sed 's/&#[0-9]*;//g' > booking-clean.html
-        
-        # استخراج رقم المريض - من الرابط أو من الصفحة
-        PATIENT=$(echo "${{ steps.read_url.outputs.url }}" | grep -o '[0-9]\{7,8\}' | head -1)
-        if [ -z "$PATIENT" ]; then
-          PATIENT=$(grep -o '[0-9]\{7,8\}' booking-clean.html | head -1)
-        fi
-        [ -z "$PATIENT" ] && PATIENT="غير معروف"
-        
-        # استخراج الرقم الحالي
-        CURRENT=$(grep -o 'الرقم الحالي[^0-9]*[0-9]\+' booking-clean.html | grep -o '[0-9]\+' | head -1)
-        if [ -z "$CURRENT" ]; then
-          CURRENT=$(grep -o '<h2[^>]*>[^<]*</h2>' booking-clean.html | grep -o '[0-9]\+' | head -1)
-        fi
-        [ -z "$CURRENT" ] && CURRENT="0"
-        
-        # ⭐️ قراءة البيانات المستخرجة من Python (بما في ذلك التاريخ الصحيح)
-        DOCTOR=$(cat extracted-data.json | jq -r '.doctorName')
-        CLINIC=$(cat extracted-data.json | jq -r '.clinicName')
-        APPOINTMENT_DATE=$(cat extracted-data.json | jq -r '.appointmentDate')
-        ORIGINAL_URL=$(cat booking-url.json | jq -r '.url')
-        
-        # إذا لم يتم استخراج التاريخ، استخدم التاريخ من صفحة الحجز
-        if [ -z "$APPOINTMENT_DATE" ] || [ "$APPOINTMENT_DATE" = "" ]; then
-          BOOKING_DATE=$(grep -o '[0-9]\{2\}-[0-9]\{2\}-[0-9]\{4\}' booking-clean.html | head -1)
-          BOOKING_TIME=$(grep -o '[0-9]\{2\}:[0-9]\{2\}' booking-clean.html | head -1)
-          
-          if [ -n "$BOOKING_DATE" ] && [ -n "$BOOKING_TIME" ]; then
-            APPOINTMENT_DATE="$BOOKING_DATE $BOOKING_TIME"
-            APPOINTMENT_DATE=$(echo "$APPOINTMENT_DATE" | sed 's/-/\//g')
-          else
-            APPOINTMENT_DATE=$(date '+%d/%m/%Y %H:%M:%S')
-          fi
-        fi
-        
-        # تحديث نفس ملف booking-result.json (المرة الثانية)
-        cat > booking-result.json << EOF
-        {
-          "success": true,
-          "message": "تم الحجز بنجاح",
-          "timestamp": "$(date -Iseconds)",
-          "bookingDetails": {
-            "doctorName": "$DOCTOR",
-            "clinicName": "$CLINIC",
-            "patientNumber": "$PATIENT",
-            "currentNumber": "$CURRENT",
-            "status": "✅ تم الحجز بنجاح",
-            "appointmentDate": "$APPOINTMENT_DATE",
-            "bookingURL": "$ORIGINAL_URL"
-          }
+            // ⏳ انتظار حتى 7:00 صباحاً بتوقيت مصر
+            console.log('⏳ الانتظار حتى 7:00 صباحاً بتوقيت مصر...');
+            await waitUntil7AM();
+            
+            // 🚀 تشغيل المتصفح
+            const browser = await chromium.launch({
+                headless: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                    '--window-size=1920,1080'
+                ]
+            });
+            
+            const context = await browser.newContext({
+                viewport: { width: 1920, height: 1080 },
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                locale: 'ar-EG',
+                timezoneId: 'Africa/Cairo',
+                permissions: ['geolocation'],
+                deviceScaleFactor: 1,
+                hasTouch: false,
+                isMobile: false
+            });
+            
+            const page = await context.newPage();
+            
+            // إخفاء علامات البوت
+            await page.addInitScript(() => {
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                
+                // محاكاة اللغة
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['ar-EG', 'ar', 'en']
+                });
+                
+                // محاكاة التشغيل
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+            });
+            
+            // 📥 تحميل الصفحة
+            console.log('🌐 تحميل صفحة الموعد...');
+            await page.goto(url, {
+                waitUntil: 'networkidle',
+                timeout: 60000
+            });
+            
+            // ⏳ تأخير عشوائي (محاكاة الإنسان)
+            await randomDelay(1000, 3000);
+            
+            // 📋 استخراج البيانات الأولية
+            console.log('📋 استخراج البيانات...');
+            const initialData = await page.evaluate(() => {
+                const getText = (selector) => {
+                    const el = document.querySelector(selector);
+                    return el ? el.textContent.trim() : '';
+                };
+                
+                return {
+                    doctorName: getText('h5'),
+                    clinicName: getText('h6'),
+                    patientNumber: getText('h1'),
+                    currentNumber: getText('h2'),
+                    appointmentDate: getText('small'),
+                    status: '⏳ جاري الحجز...'
+                };
+            });
+            
+            console.log('👨‍⚕️ الطبيب:', initialData.doctorName);
+            console.log('🏥 العيادة:', initialData.clinicName);
+            console.log('🔢 رقم المريض:', initialData.patientNumber);
+            console.log('📊 الرقم الحالي:', initialData.currentNumber);
+            
+            // 🔍 البحث عن زر "قم بالحجز الأن"
+            console.log('🔍 البحث عن زر "قم بالحجز الأن"...');
+            
+            // محاولة طرق متعددة للعثور على الزر
+            let buttonClicked = false;
+            
+            // الطريقة 1: البحث عن النص
+            try {
+                const button = await page.locator('a:has-text("قم بالحجز الأن")').first();
+                if (await button.count() > 0) {
+                    console.log('✅ تم العثور على الزر بالنص');
+                    
+                    // محاكاة حركة الفأرة
+                    const box = await button.boundingBox();
+                    if (box) {
+                        const x = box.x + box.width / 2;
+                        const y = box.y + box.height / 2;
+                        
+                        // حركة عشوائية
+                        await page.mouse.move(x + randomOffset(), y + randomOffset());
+                        await randomDelay(200, 600);
+                        await page.mouse.move(x, y);
+                        await randomDelay(300, 800);
+                        
+                        // الضغط
+                        await page.mouse.click(x, y);
+                        buttonClicked = true;
+                        console.log('🖱️ تم الضغط على الزر!');
+                    }
+                }
+            } catch (e) {
+                console.log('⚠️ فشل البحث بالنص');
+            }
+            
+            // الطريقة 2: البحث عن الرابط
+            if (!buttonClicked) {
+                try {
+                    const button = await page.locator('a[href*="Booking/Find"]').first();
+                    if (await button.count() > 0) {
+                        console.log('✅ تم العثور على الزر بالرابط');
+                        await button.click();
+                        buttonClicked = true;
+                        console.log('🖱️ تم الضغط على الزر!');
+                    }
+                } catch (e) {
+                    console.log('⚠️ فشل البحث بالرابط');
+                }
+            }
+            
+            // الطريقة 3: البحث عن عنصر cta
+            if (!buttonClicked) {
+                try {
+                    const button = await page.locator('.cta a.nav-link').first();
+                    if (await button.count() > 0) {
+                        console.log('✅ تم العثور على الزر في cta');
+                        await button.click();
+                        buttonClicked = true;
+                        console.log('🖱️ تم الضغط على الزر!');
+                    }
+                } catch (e) {
+                    console.log('⚠️ فشل البحث في cta');
+                }
+            }
+            
+            // الطريقة 4: البحث العام
+            if (!buttonClicked) {
+                try {
+                    await page.evaluate(() => {
+                        const buttons = document.querySelectorAll('a');
+                        for (const btn of buttons) {
+                            if (btn.textContent.includes('قم بالحجز الأن')) {
+                                btn.click();
+                                return;
+                            }
+                        }
+                    });
+                    buttonClicked = true;
+                    console.log('🖱️ تم الضغط عبر JavaScript!');
+                } catch (e) {
+                    console.log('⚠️ فشل الضغط عبر JavaScript');
+                }
+            }
+            
+            if (!buttonClicked) {
+                console.log('❌ لم يتم العثور على زر الحجز!');
+                await browser.close();
+                process.exit(1);
+            }
+            
+            // ⏳ انتظار تحميل الصفحة الجديدة
+            console.log('⏳ انتظار تحميل صفحة الحجز...');
+            await randomDelay(1000, 2000);
+            
+            try {
+                await page.waitForNavigation({
+                    waitUntil: 'networkidle',
+                    timeout: 30000
+                });
+            } catch (e) {
+                console.log('⚠️ لم يتم التنقل، قد تكون الصفحة نفسها');
+            }
+            
+            // 📋 استخراج البيانات من صفحة الحجز
+            console.log('📋 استخراج بيانات الحجز...');
+            const bookingData = await page.evaluate(() => {
+                const getText = (selector) => {
+                    const el = document.querySelector(selector);
+                    return el ? el.textContent.trim() : '';
+                };
+                
+                return {
+                    patientNumber: getText('h1'),
+                    currentNumber: getText('h2'),
+                    appointmentDate: getText('small')
+                };
+            });
+            
+            // دمج البيانات
+            const finalData = {
+                ...initialData,
+                patientNumber: bookingData.patientNumber || initialData.patientNumber,
+                currentNumber: bookingData.currentNumber || initialData.currentNumber,
+                appointmentDate: bookingData.appointmentDate || initialData.appointmentDate,
+                status: '✅ تم الحجز بنجاح',
+                timestamp: new Date().toISOString(),
+                egyptTime: new Date().toLocaleString('ar-EG', {
+                    timeZone: 'Africa/Cairo'
+                }),
+                bookingURL: url
+            };
+            
+            // حفظ النتيجة
+            fs.writeFileSync('booking-result.json', JSON.stringify(finalData, null, 2));
+            console.log('✅ تم حفظ النتيجة');
+            console.log('📋 البيانات النهائية:', finalData);
+            
+            // حفظ صفحة HTML
+            const html = await page.content();
+            fs.writeFileSync('booking-page.html', html);
+            console.log('✅ تم حفظ صفحة الحجز');
+            
+            await browser.close();
+            console.log('✅ تم إنهاء العملية بنجاح!');
         }
-        EOF
         
-        echo "✅ تم تحديث نفس ملف booking-result.json بالبيانات النهائية"
-        echo "👨‍⚕️ الطبيب: $DOCTOR"
-        echo "🏥 العيادة: $CLINIC"
-        echo "🔢 رقمك: $PATIENT"
-        echo "📊 الرقم الحالي: $CURRENT"
-        echo "📅 التاريخ: $APPOINTMENT_DATE"
+        // وظائف مساعدة
+        function randomDelay(min, max) {
+            return new Promise(resolve => {
+                const delay = Math.random() * (max - min) + min;
+                setTimeout(resolve, delay);
+            });
+        }
+        
+        function randomOffset() {
+            return (Math.random() - 0.5) * 20;
+        }
+        
+        function waitUntil7AM() {
+            return new Promise((resolve) => {
+                const checkTime = () => {
+                    const now = new Date();
+                    // توقيت مصر (UTC+2)
+                    const egyptTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+                    const hours = egyptTime.getHours();
+                    const minutes = egyptTime.getMinutes();
+                    
+                    console.log(`🕐 الوقت الحالي (مصر): ${hours}:${minutes}`);
+                    
+                    if (hours >= 7 && minutes >= 0) {
+                        console.log('✅ الساعة 7:00 صباحاً - بدء التنفيذ!');
+                        resolve();
+                    } else {
+                        console.log(`⏳ الانتظار...`);
+                        setTimeout(checkTime, 30000);
+                    }
+                };
+                checkTime();
+            });
+        }
+        
+        // تشغيل السكريبت
+        const url = process.argv[2] || 'https://www.elitehospital.org/Queue/958053';
+        bookAppointment(url).catch(error => {
+            console.error('❌ خطأ:', error);
+            process.exit(1);
+        });
+        EOF
     
-    # ⭐️ الخطوة 10: رفع النتيجة
+    # ⭐️ الخطوة 5: تشغيل السكريبت
+    - name: Run Playwright booking script
+      run: |
+        URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url || 'https://www.elitehospital.org/Queue/958053' }}"
+        node book.js "$URL"
+    
+    # ⭐️ الخطوة 6: رفع النتيجة
     - name: Upload result
       if: always()
       uses: actions/upload-artifact@v4
@@ -290,18 +349,16 @@ jobs:
         name: booking-result
         path: |
           booking-result.json
-          booking-url.json
-          extracted-data.json
-          page.html
           booking-page.html
+          booking-url.json
         retention-days: 7
     
-    # ⭐️ الخطوة 11: حفظ النتيجة في المستودع
+    # ⭐️ الخطوة 7: حفظ النتيجة في المستودع
     - name: Commit and push result
       if: success()
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
-        git add booking-result.json booking-url.json extracted-data.json 2>/dev/null || true
-        git commit -m "Update booking result [skip ci]" || echo "No changes to commit"
+        git add booking-result.json booking-url.json 2>/dev/null || true
+        git commit -m "Update booking result [skip ci] - $(TZ='Africa/Cairo' date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
         git push
