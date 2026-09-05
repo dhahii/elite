@@ -1,10 +1,10 @@
-name: Elite Hospital Booking - Instant
+name: Elite Hospital Booking - 11AM
 
 on:
   repository_dispatch:
     types: [new_booking]
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 9 * * *'  # 11:00 صباحاً بتوقيت مصر (9:00 UTC)
   workflow_dispatch:
     inputs:
       booking_url:
@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  instant_booking:
+  booking_11am:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -62,10 +62,10 @@ jobs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/pip
-        key: playwright-instant-${{ runner.os }}-v2
+        key: playwright-11am-${{ runner.os }}-v2
         restore-keys: |
-          playwright-instant-${{ runner.os }}-v2
-          playwright-instant-${{ runner.os }}-
+          playwright-11am-${{ runner.os }}-v2
+          playwright-11am-${{ runner.os }}-
     
     - name: Install browsers
       if: steps.cache-playwright.outputs.cache-hit != 'true'
@@ -77,35 +77,60 @@ jobs:
       run: |
         playwright install-deps
     
-    # ⭐️ إنشاء السكريبت (بدون انتظار)
-    - name: Create instant script
+    # ⭐️ إنشاء السكريبت (ينتظر 11:00 صباحاً)
+    - name: Create booking script
       run: |
         cat > book.py << 'EOF'
         import asyncio
         import json
         import os
         import random
-        from datetime import datetime
+        from datetime import datetime, timedelta
         from playwright.async_api import async_playwright
         
-        print(f"🚀 بدء التشغيل الفوري - {datetime.now()}")
+        print(f"🚀 بدء التشغيل - {datetime.now()}")
         
-        # ============= الإعدادات =============
+        # ============= انتظار 11:00 صباحاً =============
+        
+        def get_egypt_time():
+            return datetime.now() + timedelta(hours=2)
+        
+        async def wait_until_11am():
+            """الانتظار حتى 11:00 صباحاً بتوقيت مصر"""
+            print("⏳ الانتظار حتى 11:00 صباحاً بتوقيت مصر...")
+            
+            # إذا كان تشغيل يدوي، تخطي الانتظار
+            if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
+                print("🔄 تشغيل يدوي - تخطي الانتظار")
+                return
+            
+            # التحقق كل 30 ثانية
+            while True:
+                egypt_time = get_egypt_time()
+                hours = egypt_time.hour
+                minutes = egypt_time.minute
+                
+                print(f"🕐 الوقت الحالي (مصر): {hours:02d}:{minutes:02d}")
+                
+                if hours >= 11 and minutes >= 0:
+                    print("✅ 11:00 صباحاً - بدء التنفيذ!")
+                    break
+                
+                print("⏳ الانتظار 30 ثانية...")
+                await asyncio.sleep(30)
+        
+        # ============= إعدادات المتصفح =============
         
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.127 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.2592.61',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0',
         ]
         
         VIEWPORTS = [
             {'width': 1920, 'height': 1080},
             {'width': 1366, 'height': 768},
             {'width': 1536, 'height': 864},
-            {'width': 1440, 'height': 900},
-            {'width': 1280, 'height': 720},
         ]
         
         def get_random_user_agent():
@@ -117,11 +142,7 @@ jobs:
         def random_delay(min_ms, max_ms):
             return random.uniform(min_ms / 1000, max_ms / 1000)
         
-        # ============= إعداد المتصفح =============
-        
         async def setup_browser(playwright):
-            """إعداد متصفح سريع"""
-            
             user_agent = get_random_user_agent()
             viewport = get_random_viewport()
             
@@ -132,8 +153,6 @@ jobs:
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-background-timer-throttling',
-                    '--disable-renderer-backgrounding',
                     '--window-size={},{}'.format(viewport['width'], viewport['height']),
                 ]
             )
@@ -152,7 +171,6 @@ jobs:
             
             page = await context.new_page()
             
-            # تخفي خفيف
             await page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
@@ -163,13 +181,10 @@ jobs:
                 window.chrome = { runtime: {} };
             """)
             
-            page.set_default_timeout(30000)
+            page.set_default_timeout(60000)
             return browser, page
         
-        # ============= استخراج البيانات =============
-        
         async def extract_data(page):
-            """استخراج البيانات دفعة واحدة"""
             return await page.evaluate("""
                 () => {
                     const g = (s) => document.querySelector(s)?.textContent?.trim() || '';
@@ -183,39 +198,34 @@ jobs:
                 }
             """)
         
-        # ============= الوظيفة الرئيسية =============
-        
         async def book_appointment(url):
             print(f"🌐 الرابط: {url}")
-            print("⚡ تنفيذ فوري (بدون انتظار)")
+            
+            # ⏳ انتظار 11:00 صباحاً
+            await wait_until_11am()
             
             async with async_playwright() as p:
                 browser, page = await setup_browser(p)
                 
                 try:
                     print("🌐 تحميل الصفحة...")
-                    await page.goto(url, wait_until='commit', timeout=20000)
+                    await page.goto(url, wait_until='domcontentloaded', timeout=30000)
                     
                     try:
-                        await page.wait_for_selector('h5', timeout=3000)
+                        await page.wait_for_selector('h5', timeout=5000)
                     except:
-                        await page.wait_for_selector('body', timeout=2000)
+                        await page.wait_for_selector('body', timeout=3000)
                     
-                    await asyncio.sleep(random_delay(200, 500))
+                    await asyncio.sleep(random_delay(300, 800))
                     
-                    # 📋 استخراج البيانات
                     print("📋 استخراج البيانات...")
                     data = await extract_data(page)
                     
                     print(f"👨‍⚕️ الطبيب: {data['doctorName']}")
-                    print(f"🏥 العيادة: {data['clinicName']}")
                     print(f"🔢 رقم المريض: {data['patientNumber']}")
-                    print(f"📊 الرقم الحالي: {data['currentNumber']}")
                     
-                    # 🔍 الضغط على الزر
                     print("🔍 البحث عن زر 'قم بالحجز الأن'...")
                     
-                    # طريقة 1: JavaScript مباشر
                     clicked = await page.evaluate("""
                         () => {
                             for (const btn of document.querySelectorAll('a')) {
@@ -228,7 +238,6 @@ jobs:
                         }
                     """)
                     
-                    # طريقة 2: locator
                     if not clicked:
                         try:
                             btn = await page.locator('a[href*="Booking/Find"]').first
@@ -239,24 +248,22 @@ jobs:
                             pass
                     
                     if not clicked:
-                        print("❌ لم يتم العثور على زر الحجز")
+                        print("❌ لم يتم العثور على الزر")
                         await browser.close()
                         return None
                     
-                    print("🖱️ تم الضغط على الزر!")
+                    print("🖱️ تم الضغط!")
                     
-                    await asyncio.sleep(random_delay(300, 600))
+                    await asyncio.sleep(random_delay(500, 1000))
                     
                     try:
-                        await page.wait_for_navigation(wait_until='commit', timeout=5000)
+                        await page.wait_for_navigation(wait_until='domcontentloaded', timeout=10000)
                     except:
                         pass
                     
-                    # 📋 استخراج بيانات الحجز
                     print("📋 استخراج بيانات الحجز...")
                     booking_data = await extract_data(page)
                     
-                    # دمج البيانات
                     final_data = {
                         'doctorName': data['doctorName'],
                         'clinicName': data['clinicName'],
@@ -265,15 +272,19 @@ jobs:
                         'appointmentDate': booking_data['appointmentDate'] or data['appointmentDate'],
                         'status': '✅ تم الحجز بنجاح',
                         'timestamp': datetime.now().isoformat(),
+                        'egyptTime': get_egypt_time().strftime('%Y-%m-%d %H:%M:%S'),
                         'bookingURL': url
                     }
                     
-                    # 💾 حفظ النتيجة
                     with open('booking-result.json', 'w', encoding='utf-8') as f:
                         json.dump(final_data, f, ensure_ascii=False, indent=2)
                     
                     print("✅ تم حفظ النتيجة")
-                    print(f"📋 {json.dumps(final_data, ensure_ascii=False, indent=2)}")
+                    
+                    html = await page.content()
+                    with open('booking-page.html', 'w', encoding='utf-8') as f:
+                        f.write(html)
+                    print("✅ تم حفظ صفحة HTML")
                     
                     await browser.close()
                     print("✅ تم الانتهاء!")
@@ -284,8 +295,6 @@ jobs:
                     print(f"❌ خطأ: {e}")
                     await browser.close()
                     return None
-        
-        # ============= التشغيل =============
         
         async def main():
             url = os.environ.get('BOOKING_URL', 'https://www.elitehospital.org/Queue/958053')
@@ -313,6 +322,7 @@ jobs:
         name: booking-result
         path: |
           booking-result.json
+          booking-page.html
           booking-url.json
         retention-days: 7
     
