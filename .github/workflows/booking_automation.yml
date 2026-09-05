@@ -15,8 +15,9 @@ on:
 jobs:
   blazing_fast_booking:
     runs-on: ubuntu-latest
+    # ⭐️ استخدام Python Container (يحتوي على pip)
     container:
-      image: mcr.microsoft.com/playwright:latest
+      image: python:3.11-slim
     permissions:
       contents: write
     
@@ -24,18 +25,26 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    # ⭐️ تثبيت Playwright و dependencies
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl wget gnupg
+        pip install playwright
+        playwright install-deps
+        playwright install chromium
+    
     # ⭐️ استقبال الرابط
     - name: Save booking URL
       if: github.event_name == 'repository_dispatch'
       run: |
         echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
     
-    # ⭐️ قراءة الرابط (بدون jq)
+    # ⭐️ قراءة الرابط (باستخدام Python)
     - name: Read URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
-          # استخدام Python بدلاً من jq
           URL=$(python3 -c "import json; print(json.load(open('booking-url.json'))['url'])")
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "✅ الرابط: $URL"
@@ -43,17 +52,6 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
           echo "⚠️ لا يوجد ملف booking-url.json"
         fi
-    
-    # ⭐️ تثبيت بايثون
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    # ⭐️ تثبيت المكتبات
-    - name: Install dependencies
-      run: |
-        pip install playwright
     
     # ⭐️ إنشاء السكريبت
     - name: Create script
