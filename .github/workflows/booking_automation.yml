@@ -1,14 +1,14 @@
-name: Elite Hospital Booking - 11AM
+name: Elite Hospital Booking
 
 on:
   repository_dispatch:
-    types: [new_booking]
+    types: [new_booking]  # ⭐️ من التطبيق
   schedule:
-    - cron: '0 8 * * *'  # 11:00 صباحاً مصر
-  workflow_dispatch:  # ⬅️ بدون أي مدخلات
+    - cron: '0 8 * * *'   # 11:00 صباحاً مصر
+  workflow_dispatch:       # ⭐️ تشغيل يدوي (بدون مدخلات)
 
 jobs:
-  booking_11am:
+  booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -17,8 +17,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # ⭐️ استقبال الرابط من التطبيق
-    - name: Save booking URL
+    # ⭐️ 1. استقبال الرابط من التطبيق (repository_dispatch)
+    - name: Save booking URL from app
       if: github.event_name == 'repository_dispatch'
       run: |
         echo "📥 استقبال رابط من التطبيق"
@@ -26,33 +26,33 @@ jobs:
         echo "✅ تم حفظ رابط الموعد"
         cat booking-url.json
     
-    # ⭐️ قراءة الرابط
-    - name: Read URL
+    # ⭐️ 2. قراءة الرابط من الملف
+    - name: Read URL from file
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
           URL=$(cat booking-url.json | jq -r '.url')
           echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "✅ الرابط من التطبيق: $URL"
+          echo "✅ الرابط من الملف: $URL"
         else
           echo "url=" >> $GITHUB_OUTPUT
-          echo "❌ لا يوجد رابط، انتظر حتى يرسل التطبيق الرابط"
+          echo "❌ لا يوجد ملف booking-url.json"
           exit 1
         fi
     
-    # ⭐️ تثبيت Python
+    # ⭐️ 3. تثبيت Python
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
         cache: 'pip'
     
-    # ⭐️ تثبيت Playwright
+    # ⭐️ 4. تثبيت Playwright
     - name: Install dependencies
       run: |
         pip install playwright httpx pyjwt
     
-    # ⭐️ تثبيت المتصفح مع التخزين المؤقت
+    # ⭐️ 5. تثبيت المتصفح مع التخزين المؤقت
     - name: Cache Playwright browsers
       id: cache-playwright
       uses: actions/cache@v3
@@ -60,10 +60,10 @@ jobs:
         path: |
           ~/.cache/ms-playwright
           ~/.cache/pip
-        key: playwright-11am-${{ runner.os }}-v2
+        key: playwright-${{ runner.os }}-v2
         restore-keys: |
-          playwright-11am-${{ runner.os }}-v2
-          playwright-11am-${{ runner.os }}-
+          playwright-${{ runner.os }}-v2
+          playwright-${{ runner.os }}-
     
     - name: Install browsers
       if: steps.cache-playwright.outputs.cache-hit != 'true'
@@ -75,7 +75,7 @@ jobs:
       run: |
         playwright install-deps
     
-    # ⭐️ إنشاء السكريبت (ينفذ فوراً)
+    # ⭐️ 6. إنشاء السكريبت
     - name: Create booking script
       run: |
         cat > book.py << 'EOF'
@@ -87,7 +87,6 @@ jobs:
         from playwright.async_api import async_playwright
         
         print(f"🚀 بدء التشغيل - {datetime.now()}")
-        print("⚡ تنفيذ فوري (بدون انتظار)")
         
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -274,7 +273,7 @@ jobs:
             asyncio.run(main())
         EOF
     
-    # ⭐️ تشغيل السكريبت
+    # ⭐️ 7. تشغيل السكريبت
     - name: Run booking script
       run: |
         URL="${{ steps.read_url.outputs.url }}"
@@ -286,7 +285,7 @@ jobs:
         export PYTHONUNBUFFERED=1
         python3 book.py
     
-    # ⭐️ رفع النتيجة
+    # ⭐️ 8. رفع النتيجة
     - name: Upload result
       if: always()
       uses: actions/upload-artifact@v4
@@ -298,7 +297,7 @@ jobs:
           booking-url.json
         retention-days: 7
     
-    # ⭐️ حفظ النتيجة
+    # ⭐️ 9. حفظ النتيجة في المستودع
     - name: Commit result
       if: success()
       run: |
