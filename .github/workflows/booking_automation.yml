@@ -1,4 +1,4 @@
-name: Elite Hospital Booking - Blazing Fast
+name: Elite Hospital Booking - Super Fast
 
 on:
   repository_dispatch:
@@ -15,7 +15,6 @@ on:
 jobs:
   blazing_fast_booking:
     runs-on: ubuntu-latest
-    # ⭐️ استخدام Docker مع Playwright مثبت مسبقاً
     container:
       image: mcr.microsoft.com/playwright:latest
     permissions:
@@ -31,24 +30,27 @@ jobs:
       run: |
         echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
     
-    # ⭐️ قراءة الرابط
+    # ⭐️ قراءة الرابط (بدون jq)
     - name: Read URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
-          URL=$(cat booking-url.json | jq -r '.url')
+          # استخدام Python بدلاً من jq
+          URL=$(python3 -c "import json; print(json.load(open('booking-url.json'))['url'])")
           echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "✅ الرابط: $URL"
         else
           echo "url=" >> $GITHUB_OUTPUT
+          echo "⚠️ لا يوجد ملف booking-url.json"
         fi
     
-    # ⭐️ تثبيت بايثون فقط (بدون Playwright)
+    # ⭐️ تثبيت بايثون
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
     
-    # ⭐️ تثبيت المكتبات (خفيف وسريع)
+    # ⭐️ تثبيت المكتبات
     - name: Install dependencies
       run: |
         pip install playwright
@@ -64,7 +66,7 @@ jobs:
         from datetime import datetime
         from playwright.async_api import async_playwright
         
-        print(f"🚀 بدء التشغيل الفائق - {datetime.now()}")
+        print(f"🚀 بدء التشغيل - {datetime.now()}")
         
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -100,7 +102,6 @@ jobs:
             print(f"🌐 الرابط: {url}")
             
             async with async_playwright() as p:
-                # ⭐️ استخدام المتصفح المثبت في Docker
                 browser = await p.chromium.launch(
                     headless=True,
                     args=[
@@ -138,7 +139,7 @@ jobs:
                     print(f"👨‍⚕️ {data['doctorName']}")
                     print(f"🔢 رقم: {data['patientNumber']}")
                     
-                    # الضغط على الزر (أسرع طريقة)
+                    # الضغط على الزر
                     clicked = await page.evaluate("""
                         () => {
                             for (const btn of document.querySelectorAll('a')) {
