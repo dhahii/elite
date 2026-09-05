@@ -314,6 +314,7 @@ jobs:
         path: |
           booking-result.json
           booking-url.json
+          booking-page.html
         retention-days: 7
     
     # ⭐️ حفظ النتيجة
