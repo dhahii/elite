@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: [new_booking]  # ⭐️ من التطبيق
   schedule:
-    - cron: '15 12 * * *'   # 11:00 صباحاً مصر
+    - cron: '10 12 * * *'   # 11:00 صباحاً مصر
   workflow_dispatch:       # ⭐️ تشغيل يدوي (بدون مدخلات)
 
 jobs:
