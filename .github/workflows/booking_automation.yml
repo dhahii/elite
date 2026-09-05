@@ -4,7 +4,7 @@ on:
   repository_dispatch:
     types: [new_booking]
   schedule:
-    - cron: '0 9 * * *'  # 11:00 صباحاً بتوقيت مصر (9:00 UTC)
+    - cron: '0 9 * * *'  # 11:00 صباحاً بتوقيت مصر
   workflow_dispatch:
     inputs:
       booking_url:
@@ -77,7 +77,7 @@ jobs:
       run: |
         playwright install-deps
     
-    # ⭐️ إنشاء السكريبت (ينتظر 11:00 صباحاً)
+    # ⭐️ إنشاء السكريبت (بدون انتظار)
     - name: Create booking script
       run: |
         cat > book.py << 'EOF'
@@ -85,41 +85,11 @@ jobs:
         import json
         import os
         import random
-        from datetime import datetime, timedelta
+        from datetime import datetime
         from playwright.async_api import async_playwright
         
         print(f"🚀 بدء التشغيل - {datetime.now()}")
-        
-        # ============= انتظار 11:00 صباحاً =============
-        
-        def get_egypt_time():
-            return datetime.now() + timedelta(hours=2)
-        
-        async def wait_until_11am():
-            """الانتظار حتى 11:00 صباحاً بتوقيت مصر"""
-            print("⏳ الانتظار حتى 11:00 صباحاً بتوقيت مصر...")
-            
-            # إذا كان تشغيل يدوي، تخطي الانتظار
-            if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
-                print("🔄 تشغيل يدوي - تخطي الانتظار")
-                return
-            
-            # التحقق كل 30 ثانية
-            while True:
-                egypt_time = get_egypt_time()
-                hours = egypt_time.hour
-                minutes = egypt_time.minute
-                
-                print(f"🕐 الوقت الحالي (مصر): {hours:02d}:{minutes:02d}")
-                
-                if hours >= 11 and minutes >= 0:
-                    print("✅ 11:00 صباحاً - بدء التنفيذ!")
-                    break
-                
-                print("⏳ الانتظار 30 ثانية...")
-                await asyncio.sleep(30)
-        
-        # ============= إعدادات المتصفح =============
+        print("⚡ تنفيذ فوري (بدون انتظار)")
         
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -201,9 +171,6 @@ jobs:
         async def book_appointment(url):
             print(f"🌐 الرابط: {url}")
             
-            # ⏳ انتظار 11:00 صباحاً
-            await wait_until_11am()
-            
             async with async_playwright() as p:
                 browser, page = await setup_browser(p)
                 
@@ -223,6 +190,7 @@ jobs:
                     
                     print(f"👨‍⚕️ الطبيب: {data['doctorName']}")
                     print(f"🔢 رقم المريض: {data['patientNumber']}")
+                    print(f"📊 الرقم الحالي: {data['currentNumber']}")
                     
                     print("🔍 البحث عن زر 'قم بالحجز الأن'...")
                     
@@ -272,7 +240,6 @@ jobs:
                         'appointmentDate': booking_data['appointmentDate'] or data['appointmentDate'],
                         'status': '✅ تم الحجز بنجاح',
                         'timestamp': datetime.now().isoformat(),
-                        'egyptTime': get_egypt_time().strftime('%Y-%m-%d %H:%M:%S'),
                         'bookingURL': url
                     }
                     
