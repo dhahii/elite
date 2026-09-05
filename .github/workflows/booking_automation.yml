@@ -1,4 +1,4 @@
-name: Elite Hospital Booking Automation - Python
+name: Elite Hospital Booking - Ultra Fast
 
 on:
   repository_dispatch:
@@ -13,7 +13,7 @@ on:
         type: string
 
 jobs:
-  python_booking:
+  ultra_fast_booking:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,41 +22,60 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    # ⭐️ الخطوة 1: استقبال الرابط من التطبيق
-    - name: Save booking URL from app
+    # ⭐️ الخطوة 1: استقبال الرابط (سريع)
+    - name: Save booking URL
       if: github.event_name == 'repository_dispatch'
       run: |
-        echo "📥 استقبال رابط من التطبيق"
         echo '${{ toJSON(github.event.client_payload) }}' > booking-url.json
-        echo "✅ تم حفظ رابط الموعد"
-        cat booking-url.json
+        URL=$(cat booking-url.json | jq -r '.url')
+        echo "url=$URL" >> $GITHUB_OUTPUT
     
     # ⭐️ الخطوة 2: قراءة الرابط
-    - name: Read booking URL
+    - name: Read URL
       id: read_url
       run: |
         if [ -f "booking-url.json" ]; then
           URL=$(cat booking-url.json | jq -r '.url')
           echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "✅ الرابط من JSON: $URL"
         else
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ الخطوة 3: تثبيت Python و Playwright
+    # ⭐️ الخطوة 3: تثبيت Python فائق السرعة (مع التخزين المؤقت)
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'
     
-    - name: Install Python dependencies
+    # ⭐️ الخطوة 4: تثبيت Playwright مع التخزين المؤقت المسبق
+    - name: Cache Playwright
+      id: cache-playwright
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/pip
+        key: playwright-ultra-${{ runner.os }}-v2
+        restore-keys: |
+          playwright-ultra-${{ runner.os }}-v2
+    
+    - name: Install dependencies (fast)
       run: |
-        pip install playwright
-        playwright install chromium
+        pip install playwright --no-cache-dir
+    
+    - name: Install browsers (cached)
+      if: steps.cache-playwright.outputs.cache-hit != 'true'
+      run: |
+        playwright install chromium --with-deps
+    
+    - name: Install deps (cached)
+      if: steps.cache-playwright.outputs.cache-hit == 'true'
+      run: |
         playwright install-deps
     
-    # ⭐️ الخطوة 4: إنشاء سكريبت Python
-    - name: Create Python booking script
+    # ⭐️ الخطوة 5: السكريبت فائق السرعة
+    - name: Create ultra fast script
       run: |
         cat > book.py << 'EOF'
         import asyncio
@@ -66,232 +85,164 @@ jobs:
         from datetime import datetime, timedelta
         from playwright.async_api import async_playwright
         
-        # إعداد التوقيت
+        # ⚡ إعدادات السرعة القصوى
+        FAST = True
+        ULTRA_FAST = True
+        
         def get_egypt_time():
-            """الحصول على الوقت الحالي بتوقيت مصر"""
             return datetime.now() + timedelta(hours=2)
         
-        def random_delay(min_ms, max_ms):
-            """تأخير عشوائي لمحاكاة الإنسان"""
-            return random.uniform(min_ms / 1000, max_ms / 1000)
-        
-        def random_offset():
-            """إزاحة عشوائية لحركة الفأرة"""
-            return (random.random() - 0.5) * 20
-        
         async def wait_until_7am():
-            """الانتظار حتى الساعة 7:00 صباحاً بتوقيت مصر"""
-            print("⏳ الانتظار حتى 7:00 صباحاً بتوقيت مصر...")
+            """الانتظار حتى 7:00 صباحاً (أسرع نسخة)"""
+            print("⏳ الانتظار حتى 7:00...")
             
-            while True:
+            # ⚡ التحقق كل 5 ثواني فقط
+            for _ in range(120):  # 10 دقائق كحد أقصى
                 egypt_time = get_egypt_time()
-                hours = egypt_time.hour
-                minutes = egypt_time.minute
-                
-                print(f"🕐 الوقت الحالي (مصر): {hours:02d}:{minutes:02d}")
-                
-                if hours >= 7 and minutes >= 0:
-                    print("✅ الساعة 7:00 صباحاً - بدء التنفيذ!")
-                    break
-                
-                print("⏳ الانتظار 30 ثانية...")
-                await asyncio.sleep(30)
+                if egypt_time.hour >= 7:
+                    print("✅ 7:00 - بدء التنفيذ!")
+                    return
+                await asyncio.sleep(5)  # 5 ثواني فقط
         
         async def book_appointment(url):
-            """الوظيفة الرئيسية للحجز"""
-            print(f"🚀 بدء التشغيل مع Python + Playwright...")
-            print(f"🌐 الرابط: {url}")
+            print(f"⚡ بدء التشغيل فائق السرعة...")
             
-            # ⏳ انتظار 7:00 صباحاً (إذا لم يكن تشغيل يدوي)
+            # ⏳ انتظار 7:00 (إذا لم يكن تشغيل يدوي)
             if os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch':
                 await wait_until_7am()
-            else:
-                print("🔄 تشغيل يدوي - تخطي الانتظار")
             
-            # 🚀 تشغيل المتصفح
+            # 🚀 تشغيل المتصفح (مع إعدادات السرعة القصوى)
             async with async_playwright() as p:
-                # تشغيل المتصفح
                 browser = await p.chromium.launch(
                     headless=True,
                     args=[
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
                         '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
                         '--disable-gpu',
-                        '--window-size=1920,1080'
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--disable-ipc-flooding-protection',
+                        '--disable-features=IsolateOrigins,site-per-process',
+                        '--disable-web-security',
+                        '--disable-features=BlockInsecurePrivateNetworkRequests',
+                        '--disable-features=OutOfBlinkCors'
                     ]
                 )
                 
-                # إنشاء سياق المتصفح
+                # ⚡ سياق سريع جداً
                 context = await browser.new_context(
                     viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     locale='ar-EG',
-                    timezone_id='Africa/Cairo'
+                    timezone_id='Africa/Cairo',
+                    extra_http_headers={
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'Connection': 'keep-alive'
+                    }
                 )
                 
                 page = await context.new_page()
                 
-                # إخفاء علامات البوت
+                # إخفاء البوت (سريع)
                 await page.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                    
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['ar-EG', 'ar', 'en']
-                    });
-                    
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
-                    });
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['ar-EG', 'ar'] });
                 """)
                 
-                # 📥 تحميل الصفحة
-                print("🌐 تحميل صفحة الموعد...")
-                await page.goto(url, wait_until='networkidle', timeout=60000)
+                # 📥 تحميل الصفحة فائق السرعة
+                print("🌐 تحميل الصفحة...")
+                try:
+                    # ⚡ أسرع طريقة: انتظار العنصر المطلوب فقط
+                    await page.goto(url, wait_until='commit', timeout=10000)
+                    await page.wait_for_selector('h5', timeout=3000)
+                except:
+                    # طريقة احتياطية سريعة
+                    await page.goto(url, wait_until='domcontentloaded', timeout=10000)
                 
-                # ⏳ تأخير عشوائي
-                await asyncio.sleep(random_delay(1000, 3000))
+                # ⚡ تأخير بسيط جداً
+                await asyncio.sleep(0.3)
                 
-                # 📋 استخراج البيانات الأولية
+                # 📋 استخراج البيانات فائق السرعة
                 print("📋 استخراج البيانات...")
-                initial_data = await page.evaluate("""
+                data = await page.evaluate("""
                     () => {
-                        const getText = (selector) => {
-                            const el = document.querySelector(selector);
-                            return el ? el.textContent.trim() : '';
-                        };
-                        
+                        const g = (s) => document.querySelector(s)?.textContent?.trim() || '';
                         return {
-                            doctorName: getText('h5'),
-                            clinicName: getText('h6'),
-                            patientNumber: getText('h1'),
-                            currentNumber: getText('h2'),
-                            appointmentDate: getText('small'),
-                            status: '⏳ جاري الحجز...'
+                            doctorName: g('h5'),
+                            clinicName: g('h6'),
+                            patientNumber: g('h1'),
+                            currentNumber: g('h2'),
+                            appointmentDate: g('small')
                         };
                     }
                 """)
                 
-                print(f"👨‍⚕️ الطبيب: {initial_data['doctorName']}")
-                print(f"🏥 العيادة: {initial_data['clinicName']}")
-                print(f"🔢 رقم المريض: {initial_data['patientNumber']}")
-                print(f"📊 الرقم الحالي: {initial_data['currentNumber']}")
-                print(f"📅 التاريخ: {initial_data['appointmentDate']}")
+                print(f"👨‍⚕️ {data['doctorName']}")
+                print(f"🔢 رقم: {data['patientNumber']}")
                 
-                # 🔍 البحث عن زر "قم بالحجز الأن"
-                print("🔍 البحث عن زر 'قم بالحجز الأن'...")
-                button_clicked = False
+                # 🔍 البحث عن الزر والضغط عليه (أسرع طريقة)
+                print("🔍 الضغط على الزر...")
                 
-                # الطريقة 1: البحث بالنص
+                # ⚡ محاولة واحدة سريعة جداً
                 try:
-                    button = await page.locator('a:has-text("قم بالحجز الأن")').first
-                    if await button.count() > 0:
-                        print("✅ تم العثور على الزر بالنص")
-                        
-                        # محاكاة حركة الفأرة
-                        box = await button.bounding_box()
-                        if box:
-                            x = box['x'] + box['width'] / 2
-                            y = box['y'] + box['height'] / 2
-                            
-                            # حركة عشوائية
-                            await page.mouse.move(x + random_offset(), y + random_offset())
-                            await asyncio.sleep(random_delay(200, 600))
-                            await page.mouse.move(x, y)
-                            await asyncio.sleep(random_delay(300, 800))
-                            
-                            # الضغط
-                            await page.mouse.click(x, y)
-                            button_clicked = True
-                            print("🖱️ تم الضغط على الزر!")
-                except Exception as e:
-                    print(f"⚠️ فشل البحث بالنص: {e}")
-                
-                # الطريقة 2: البحث بالرابط
-                if not button_clicked:
-                    try:
-                        button = await page.locator('a[href*="Booking/Find"]').first
-                        if await button.count() > 0:
-                            print("✅ تم العثور على الزر بالرابط")
-                            await button.click()
-                            button_clicked = True
-                            print("🖱️ تم الضغط على الزر!")
-                    except Exception as e:
-                        print(f"⚠️ فشل البحث بالرابط: {e}")
-                
-                # الطريقة 3: البحث في عنصر cta
-                if not button_clicked:
-                    try:
-                        button = await page.locator('.cta a.nav-link').first
-                        if await button.count() > 0:
-                            print("✅ تم العثور على الزر في cta")
-                            await button.click()
-                            button_clicked = True
-                            print("🖱️ تم الضغط على الزر!")
-                    except Exception as e:
-                        print(f"⚠️ فشل البحث في cta: {e}")
-                
-                # الطريقة 4: البحث العام
-                if not button_clicked:
-                    try:
-                        await page.evaluate("""
-                            () => {
-                                const buttons = document.querySelectorAll('a');
-                                for (const btn of buttons) {
-                                    if (btn.textContent.includes('قم بالحجز الأن')) {
-                                        btn.click();
-                                        return;
-                                    }
+                    # الطريقة الأسرع: استخدام JavaScript مباشرة
+                    result = await page.evaluate("""
+                        () => {
+                            const buttons = document.querySelectorAll('a');
+                            for (const btn of buttons) {
+                                if (btn.textContent.includes('قم بالحجز الأن')) {
+                                    btn.click();
+                                    return true;
                                 }
                             }
-                        """)
-                        button_clicked = True
-                        print("🖱️ تم الضغط عبر JavaScript!")
-                    except Exception as e:
-                        print(f"⚠️ فشل الضغط عبر JavaScript: {e}")
+                            return false;
+                        }
+                    """)
+                    
+                    if result:
+                        print("🖱️ تم الضغط!")
+                    else:
+                        # طريقة احتياطية
+                        await page.click('a[href*="Booking/Find"]')
+                        print("🖱️ تم الضغط!")
+                except:
+                    # آخر محاولة
+                    await page.click('.cta a.nav-link')
+                    print("🖱️ تم الضغط!")
                 
-                if not button_clicked:
-                    print("❌ لم يتم العثور على زر الحجز!")
-                    await browser.close()
-                    return False
+                # ⚡ انتظار بسيط جداً
+                await asyncio.sleep(0.5)
                 
-                # ⏳ انتظار تحميل الصفحة الجديدة
-                print("⏳ انتظار تحميل صفحة الحجز...")
-                await asyncio.sleep(random_delay(1000, 2000))
-                
+                # انتظار التنقل (سريع)
                 try:
-                    await page.wait_for_navigation(wait_until='networkidle', timeout=30000)
-                except Exception as e:
-                    print(f"⚠️ لم يتم التنقل، قد تكون الصفحة نفسها: {e}")
+                    await page.wait_for_navigation(wait_until='commit', timeout=5000)
+                except:
+                    pass
                 
-                # 📋 استخراج البيانات من صفحة الحجز
+                # 📋 استخراج بيانات الحجز
                 print("📋 استخراج بيانات الحجز...")
                 booking_data = await page.evaluate("""
                     () => {
-                        const getText = (selector) => {
-                            const el = document.querySelector(selector);
-                            return el ? el.textContent.trim() : '';
-                        };
-                        
+                        const g = (s) => document.querySelector(s)?.textContent?.trim() || '';
                         return {
-                            patientNumber: getText('h1'),
-                            currentNumber: getText('h2'),
-                            appointmentDate: getText('small')
+                            patientNumber: g('h1'),
+                            currentNumber: g('h2'),
+                            appointmentDate: g('small')
                         };
                     }
                 """)
                 
                 # دمج البيانات
                 final_data = {
-                    'doctorName': initial_data['doctorName'],
-                    'clinicName': initial_data['clinicName'],
-                    'patientNumber': booking_data['patientNumber'] or initial_data['patientNumber'],
-                    'currentNumber': booking_data['currentNumber'] or initial_data['currentNumber'],
-                    'appointmentDate': booking_data['appointmentDate'] or initial_data['appointmentDate'],
-                    'status': '✅ تم الحجز بنجاح',
+                    'doctorName': data['doctorName'],
+                    'clinicName': data['clinicName'],
+                    'patientNumber': booking_data['patientNumber'] or data['patientNumber'],
+                    'currentNumber': booking_data['currentNumber'] or data['currentNumber'],
+                    'appointmentDate': booking_data['appointmentDate'] or data['appointmentDate'],
+                    'status': '✅ تم الحجز',
                     'timestamp': datetime.now().isoformat(),
                     'egyptTime': get_egypt_time().strftime('%Y-%m-%d %H:%M:%S'),
                     'bookingURL': url
@@ -299,23 +250,14 @@ jobs:
                 
                 # 💾 حفظ النتيجة
                 with open('booking-result.json', 'w', encoding='utf-8') as f:
-                    json.dump(final_data, f, ensure_ascii=False, indent=2)
+                    json.dump(final_data, f, ensure_ascii=False)
                 
                 print("✅ تم حفظ النتيجة")
-                print(f"📋 البيانات النهائية: {json.dumps(final_data, ensure_ascii=False, indent=2)}")
-                
-                # 💾 حفظ صفحة HTML
-                html = await page.content()
-                with open('booking-page.html', 'w', encoding='utf-8') as f:
-                    f.write(html)
-                
-                print("✅ تم حفظ صفحة الحجز")
                 
                 await browser.close()
-                print("✅ تم إنهاء العملية بنجاح!")
+                print("✅ تم الإنتهاء!")
                 return True
         
-        # تشغيل السكريبت
         async def main():
             url = os.environ.get('BOOKING_URL', 'https://www.elitehospital.org/Queue/958053')
             success = await book_appointment(url)
@@ -326,14 +268,15 @@ jobs:
             asyncio.run(main())
         EOF
     
-    # ⭐️ الخطوة 5: تشغيل السكريبت
-    - name: Run Python booking script
+    # ⭐️ الخطوة 6: تشغيل فائق السرعة
+    - name: Run ultra fast
       run: |
         URL="${{ github.event.inputs.booking_url || steps.read_url.outputs.url || 'https://www.elitehospital.org/Queue/958053' }}"
         export BOOKING_URL="$URL"
+        export PYTHONUNBUFFERED=1
         python3 book.py
     
-    # ⭐️ الخطوة 6: رفع النتيجة
+    # ⭐️ الخطوة 7: رفع النتيجة
     - name: Upload result
       if: always()
       uses: actions/upload-artifact@v4
@@ -341,16 +284,15 @@ jobs:
         name: booking-result
         path: |
           booking-result.json
-          booking-page.html
           booking-url.json
         retention-days: 7
     
-    # ⭐️ الخطوة 7: حفظ النتيجة في المستودع
-    - name: Commit and push result
+    # ⭐️ الخطوة 8: حفظ النتيجة
+    - name: Commit
       if: success()
       run: |
-        git config user.name "GitHub Actions Bot"
-        git config user.email "actions@github.com"
+        git config user.name "Bot"
+        git config user.email "bot@github.com"
         git add booking-result.json booking-url.json 2>/dev/null || true
-        git commit -m "Update booking result [skip ci] - $(TZ='Africa/Cairo' date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+        git commit -m "Update [skip ci]" || echo "No changes"
         git push
