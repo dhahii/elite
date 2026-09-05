@@ -1,4 +1,4 @@
-name: Elite Hospital Booking - Super Fast
+name: Elite Hospital Booking - Blazing Fast
 
 on:
   repository_dispatch:
@@ -13,8 +13,11 @@ on:
         type: string
 
 jobs:
-  super_fast_booking:
+  blazing_fast_booking:
     runs-on: ubuntu-latest
+    # ⭐️ استخدام Docker مع Playwright مثبت مسبقاً
+    container:
+      image: mcr.microsoft.com/playwright:latest
     permissions:
       contents: write
     
@@ -39,24 +42,18 @@ jobs:
           echo "url=" >> $GITHUB_OUTPUT
         fi
     
-    # ⭐️ تثبيت Python
+    # ⭐️ تثبيت بايثون فقط (بدون Playwright)
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-        cache: 'pip'
     
-    # ⭐️ تثبيت Playwright فقط (بدون متصفح)
+    # ⭐️ تثبيت المكتبات (خفيف وسريع)
     - name: Install dependencies
       run: |
         pip install playwright
     
-    # ⭐️ استخدام Chrome المثبت (بدون تحميل)
-    - name: Install Playwright dependencies
-      run: |
-        playwright install-deps
-    
-    # ⭐️ إنشاء السكريبت (يستخدم Chrome المثبت)
+    # ⭐️ إنشاء السكريبت
     - name: Create script
       run: |
         cat > book.py << 'EOF'
@@ -67,7 +64,7 @@ jobs:
         from datetime import datetime
         from playwright.async_api import async_playwright
         
-        print(f"🚀 بدء التشغيل السريع - {datetime.now()}")
+        print(f"🚀 بدء التشغيل الفائق - {datetime.now()}")
         
         USER_AGENTS = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
@@ -103,9 +100,8 @@ jobs:
             print(f"🌐 الرابط: {url}")
             
             async with async_playwright() as p:
-                # ⭐️ استخدام Chrome المثبت (0 ثانية تحميل)
+                # ⭐️ استخدام المتصفح المثبت في Docker
                 browser = await p.chromium.launch(
-                    channel='chrome',  # ⭐️ استخدام Chrome المثبت
                     headless=True,
                     args=[
                         '--no-sandbox',
